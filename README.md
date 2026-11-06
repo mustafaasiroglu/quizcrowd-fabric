@@ -6,9 +6,9 @@ publisher-controlled anonymous attendance, and application data persisted in
 
 > **Preview implementation template, not a production-certified deployment.**
 > Local typechecks, game/authorization tests and the real Fabric Functions
-> bundler are exercised. Initial Fabric deployment and private SQL schema
-> initialization have been exercised in a test workspace; signed-in end-to-end
-> game flows and runtime SQL identity still await live verification.
+> bundler are exercised. An Entra-only test deployment passed 30 actual
+> SDK/SQL/UI checks, including administrator bootstrap, quiz/survey flows,
+> concurrent submissions, QR hosting and persistence across a portal reload.
 > In particular, anonymous Function invocation with app-identity SQL access
 > must be confirmed in your tenant before enabling public attendance.
 > See the [release gates](docs/deployment.md#release-gates).
@@ -117,13 +117,21 @@ correctness over high-throughput scale; load-test your capacity before an event.
 Image upload, AI survey generation, automatic retention, moderator tools and
 custom domains are not implemented. See the [full operational limitations](docs/architecture.md#limitations).
 
-The [public CI run](https://github.com/mustafaasiroglu/quizcrowd-fabric/actions/runs/42216044575)
-passed the clean install, all 31 tests, typechecks/build and a full online
-dependency audit reporting **0 known vulnerabilities**. CI retains a
+The [public CI workflow](https://github.com/mustafaasiroglu/quizcrowd-fabric/actions/workflows/check.yml)
+runs a clean install, all 34 local regression tests, typechecks/build and a full
+online dependency audit. The validated lockfile reported **0 known
+vulnerabilities**; CI retains a
 high/critical advisory gate. The lockfile uses patched Vite/Vitest plus explicit
 Zod, CLI MSAL and glob overrides; see [dependency maintenance](docs/deployment.md#dependency-maintenance).
 This is a point-in-time audit, not a security certification. Never use
 `npm audit fix --force` to silently downgrade the verified Fabric SDK.
+
+The production-build QR regression reproduces the duplicate-React hook failure
+found during live testing. Vite explicitly deduplicates React for workspace
+dependencies; the corrected QR/lobby and timed host UI were redeployed and
+retested. Live tests used one real Entra account; foreign-owner and existing-guest
+negative cases used trusted SQL fixtures. Public anonymous execution remains a
+separate, unpassed release gate; see the [observed results](docs/deployment.md#release-gates).
 
 ## Attribution and distribution
 

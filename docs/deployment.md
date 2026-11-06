@@ -171,6 +171,11 @@ permissions. First Entra sign-in provisions a session automatically. Interactive
 sign-in runs directly from the sign-in button; embedded authentication is
 initialized before trusting a stored standalone session.
 
+For the first test, open the deployed App item through the Fabric portal and
+sign in to its owning tenant. This embedded path was live-verified. A standalone
+protected-hosting launch also needs its platform sign-in popup; a browser panel
+that blocks popups cannot establish that session.
+
 Run all applicable [release gates](#release-gates) for the Entra-only baseline.
 
 ## 4. Bootstrap a publisher/admin explicitly
@@ -349,6 +354,12 @@ generation and actual Function bundling. Both local and clean Ubuntu CI
 typechecks/tests/build passed. Live sign-in, publishing, SQL access and guest
 authorization still require the release gates below.
 
+The frontend also sets Vite `resolve.dedupe` for `react` and `react-dom`. A
+workspace peer dependency can otherwise load a different React copy for
+`qrcode.react`, producing an invalid-hook failure only when the lobby QR
+renders. The production-Vite QR test reproduced the live `useMemo` error before
+this fix, renders the real SVG afterward, and requires no Fabric credentials.
+
 Review these overrides when updating the SDK and remove them only after the
 upstream dependencies are patched and integration checks pass. Do not follow
 an `npm audit fix --force` recommendation that downgrades Rayfin to an older
@@ -356,22 +367,41 @@ API. Audit results are point-in-time evidence, not a production security promise
 
 ## Release gates
 
-An initial test-workspace deployment created the app on an existing F8 capacity,
-deployed the Function, stored its SQL coordinates through app secrets, and
-initialized/read back the private SQL schema with anonymous access off. Actual
-signed-out probes were rejected: Function calls returned HTTP 403
+An Entra-only test deployment on an existing F8 capacity passed **30 actual
+SDK/SQL/UI checks**. These included caller-scoped identity verification,
+encrypted SQL configuration and app-owner SQL token binding, trusted admin
+bootstrap, quiz/survey authoring, join-code attendance, credential rotation and
+quiz scoping, concurrent host actions and duplicate/competing answers, scoring,
+aggregate survey results, and persistence across a real portal/client reload.
+The real form, QR lobby, timed question, reveal, leaderboard and finish controls
+were exercised after fixing and redeploying the duplicate-React QR failure.
+
+Negative controls also verified absent private GraphQL entities, protected
+answer keys, subject/ownership spoof rejection, and a real authenticated
+nonadmin's inability to configure the app. Tests used **one real Entra account**:
+foreign ownership and previously issued guest credentials used explicitly
+trusted SQL fixtures, not a second account or a successful public session.
+The database global-off check rejected preview/join/state/answer for an existing
+public guest fixture through an authenticated gateway request carrying no
+claimed actor. This proves the SQL-backed application check, not signed-out
+gateway support. All temporary negative fixtures were removed, the administrator
+was restored, and anonymous access remained off with generation 0.
+
+Separately, actual signed-out probes were rejected: Function calls returned HTTP 403
 (`Anonymous access is not allowed for function invocation`), and CallerIdentity
 read/create returned GraphQL authorization errors. This verifies the baseline
-boundary, not public attendance or app-owner SQL token binding. Signed-in
-end-to-end flows and trusted admin bootstrap remain unverified while the
-interactive browser/`Item.Execute.All` authentication gate is unresolved.
-No tenant-wide anonymous setting was changed.
+boundary, **not public attendance**. Live off/on generation revocation, guest
+isolation with enabled public execution, a second real account and load testing
+remain release gates. No tenant-wide anonymous setting was changed. The
+supported interactive Fabric broker resolved the initial browser authentication
+gate; Azure CLI's optional direct-token path still lacks first-party
+`Item.Execute.All` preauthorization in this environment.
 
 Local tests use domain objects and a serialized transactional test double. The
 SDK metadata test uses the real built model and real policy DSL. Wire tests use
 the real SDK with mocked HTTP responses, including both encoded and object
-Function reply envelopes. The build and offline bundler are real. None of these
-tests makes a request to live Fabric.
+Function reply envelopes. The build and offline bundler are real. The 34 local regression tests do not
+make a request to live Fabric; the separate live results above do.
 
 Before any event, test the following in a **non-production tenant/workspace**.
 Use browser developer tools or a small SDK caller to bypass the UI deliberately.
