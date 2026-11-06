@@ -11,6 +11,8 @@ publisher-controlled anonymous attendance, and application data persisted in
 > concurrent submissions, QR hosting and persistence across a portal reload.
 > In particular, anonymous Function invocation with app-identity SQL access
 > must be confirmed in your tenant before enabling public attendance.
+> A live public-hosting experiment served the frontend anonymously, but
+> Function calls still returned HTTP 403; public assets alone did not unblock them.
 > See the [release gates](docs/deployment.md#release-gates).
 
 ## What you can build

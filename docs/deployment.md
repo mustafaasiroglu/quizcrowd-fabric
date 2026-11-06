@@ -227,6 +227,15 @@ database flag off. Do not add public CRUD grants, decode an unverified JWT,
 use a shared creator token in the browser, or expose a direct Functions host
 URL as a workaround.
 
+Read the tenant setting rather than assuming it is disabled: a Fabric
+administrator can use the supported
+[List Tenant Settings API](https://learn.microsoft.com/en-us/rest/api/fabric/admin/tenants/list-tenant-settings).
+An enabled tenant setting and publicly served static assets do not prove that
+the Function gateway permits unsigned invocation. Check effective app-owner
+security-group scope if the response does not establish it. Rayfin 1.36.2
+validates `functions.auth.type: application`; do not invent an `anonymous` or
+`none` auth mode to bypass this gate.
+
 The bounded alternative is Entra-only attendance with the existing template.
 An external authenticated/anonymous API gateway or hosting backend would be a
 separate architecture and infrastructure decision, not a hidden fallback in
@@ -397,6 +406,28 @@ supported interactive Fabric broker resolved the initial browser authentication
 gate; Azure CLI's optional direct-token path still lacks first-party
 `Item.Execute.All` preauthorization in this environment.
 
+A separately approved, temporary public-hosting experiment further isolated
+the access layers. The real tenant-settings API returned
+`EnableAnonymousDataAccessForFabricApps.enabled: true`, but no security-group
+scope details; effective owner-group applicability was not established.
+A full supported CLI deployment set the actual app's
+`staticHosting.anonymousAccess` to `true`, with Function authentication still
+`application`. An unsigned client retrieved the real production HTML and
+JavaScript with HTTP 200. Its `settings`, `list`, and internal-quiz `preview`
+Function calls nevertheless all returned the same gateway HTTP 403, and direct
+CallerIdentity reads remained unauthorized. Thus protected static hosting was
+not the sole blocker, and simply enabling the tenant setting again is not a
+supported remedy.
+
+The experiment was rolled back through another full deployment. Remote
+settings confirmed protected hosting, and an unsigned request to the app entry
+returned HTTP 401. Private SQL readback before and after the experiment retained
+`AnonymousEnabled = 0`, `GuestEpoch = 0`, one administrator and the same four
+internal test sessions. No public game/data grants were added. This is evidence
+for this deployment, not proof that all tenants lack anonymous Functions or that
+an unsigned call received an app-identity SQL token. The Function gateway and
+effective tenant scope still need platform confirmation before public attendance.
+
 Local tests use domain objects and a serialized transactional test double. The
 SDK metadata test uses the real built model and real policy DSL. Wire tests use
 the real SDK with mocked HTTP responses, including both encoded and object
@@ -443,7 +474,7 @@ attendee data as test evidence.
 | Caller identity verification fails | Deployed CallerIdentity policy/schema, same signed-in client and expected subject; do not weaken the policy |
 | SQL socket hang-up | Use pinned mssql 12.6.0/tedious >=19.2.2, actual SQL Database writable endpoint, `encrypt: true` and a valid app-owner token |
 | SQL permission error | Grant runtime app owner on the separate application database; developer access does not prove runtime access |
-| Guest 401/403 before Function | Stop: tenant/gateway support needs confirmation; keep Entra-only, not a public CRUD workaround |
+| Guest 401/403 before Function | Check effective owner-group scope and gateway support, even if the tenant setting is enabled; public assets alone did not resolve the observed Function 403. Keep the DB guest flag off, not a public CRUD workaround |
 | Guest switch is on but assets ask for sign-in | Hosting remains protected; public assets require full redeploy |
 | Public option disabled | Global DB switch is off or settings call failed; UI fails closed |
 | Duplicate/stale host action | Another action advanced the game; refresh. SQL deadlock/timeouts surface as failures, not silent success; retry after reading current state |
