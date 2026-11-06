@@ -231,8 +231,8 @@ Read the tenant setting rather than assuming it is disabled: a Fabric
 administrator can use the supported
 [List Tenant Settings API](https://learn.microsoft.com/en-us/rest/api/fabric/admin/tenants/list-tenant-settings).
 An enabled tenant setting and publicly served static assets do not prove that
-the Function gateway permits unsigned invocation. Check effective app-owner
-security-group scope if the response does not establish it. Rayfin 1.36.2
+the Function gateway permits unsigned invocation. Read the setting's scope in
+the Admin portal if the API response does not establish it. Rayfin 1.36.2
 validates `functions.auth.type: application`; do not invent an `anonymous` or
 `none` auth mode to bypass this gate.
 
@@ -409,7 +409,9 @@ gate; Azure CLI's optional direct-token path still lacks first-party
 A separately approved, temporary public-hosting experiment further isolated
 the access layers. The real tenant-settings API returned
 `EnableAnonymousDataAccessForFabricApps.enabled: true`, but no security-group
-scope details; effective owner-group applicability was not established.
+scope details. A separate read-only Admin portal inspection confirmed that
+the setting applied to the entire organization, with no group exclusions.
+The form remained pristine with its Apply button disabled; no policy was changed.
 A full supported CLI deployment set the actual app's
 `staticHosting.anonymousAccess` to `true`, with Function authentication still
 `application`. An unsigned client retrieved the real production HTML and
@@ -426,7 +428,7 @@ returned HTTP 401. Private SQL readback before and after the experiment retained
 internal test sessions. No public game/data grants were added. This is evidence
 for this deployment, not proof that all tenants lack anonymous Functions or that
 an unsigned call received an app-identity SQL token. The Function gateway and
-effective tenant scope still need platform confirmation before public attendance.
+unsigned SQL-token binding still need platform confirmation before public attendance.
 
 Local tests use domain objects and a serialized transactional test double. The
 SDK metadata test uses the real built model and real policy DSL. Wire tests use
