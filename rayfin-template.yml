@@ -1,0 +1,10 @@
+apiVersion: v1
+metadata:
+  name: quizcrowd-fabric
+  displayName: QuizCrowd for Microsoft Fabric
+  description: >-
+    Live quizzes and manually authored surveys with Entra-secured authoring,
+    private Fabric SQL persistence, and publisher-controlled guest attendance.
+entries:
+  - path: .
+    name: quizcrowd-fabric

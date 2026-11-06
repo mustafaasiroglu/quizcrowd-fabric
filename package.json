@@ -1,0 +1,42 @@
+{
+  "name": "quizcrowd-fabric",
+  "description": "Live quizzes and manually authored surveys for Microsoft Fabric Apps.",
+  "license": "UNLICENSED",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "rayfin/functions"
+  ],
+  "template": {
+    "name": "quizcrowd-fabric",
+    "displayName": "QuizCrowd for Microsoft Fabric",
+    "description": "Entra-secured live quizzes and surveys with private Fabric SQL persistence.",
+    "hidden": false
+  },
+  "scripts": {
+    "dev": "rayfin dev",
+    "dev:frontend": "npm run -w @rayfin-app/frontend dev",
+    "build": "npm run -w @rayfin-app/shared build && npm run -w @rayfin-app/data build && npm run -w rayfin-functions build && npm run -w @rayfin-app/frontend build",
+    "build:fabric": "npm run -w @rayfin-app/shared build && npm run -w @rayfin-app/data build && npm run -w @rayfin-app/frontend build:fabric",
+    "preview": "npm run -w @rayfin-app/frontend preview",
+    "pretest": "npm run -w @rayfin-app/shared build && npm run -w @rayfin-app/data build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm test && npm run build",
+    "typecheck": "tsc -b && npm run -w rayfin-functions build",
+    "rayfin:up": "rayfin up"
+  },
+  "devDependencies": {
+    "@microsoft/rayfin-cli": "1.36.2",
+    "@microsoft/rayfin-guide": "1.36.2",
+    "typescript": "5.8.3",
+    "vitest": "4.1.8",
+    "vite": "8.0.16"
+  },
+  "engines": { "node": ">=24 <25" },
+  "overrides": {
+    "@microsoft/rayfin-tools-common": { "zod": "4.6.7" }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@rayfin-app/frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "build:fabric": "tsc -b && rayfin env --framework vite && vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@microsoft/rayfin-auth": "1.36.2",
+    "@microsoft/rayfin-auth-provider-fabric": "1.36.2",
+    "@microsoft/rayfin-client": "1.36.2",
+    "@rayfin-app/shared": "*",
+    "qrcode.react": "4.2.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@microsoft/rayfin-local-dev": "1.36.2",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react-swc": "4.3.1",
+    "vite": "8.0.16"
+  }
+}
