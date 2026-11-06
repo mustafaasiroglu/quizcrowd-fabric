@@ -212,7 +212,7 @@ Public mode has independent layers:
 
 | Layer | Action |
 | --- | --- |
-| Tenant | Fabric administrator enables **Anonymous data access** for the approved app-owner/publisher group, if required by the destination environment |
+| Tenant | Fabric administrator approves public access and enables **Anonymous data access** for the approved app-owner/publisher group; this setting alone does not establish Function support |
 | Static assets | Change `services.staticHosting.assetAccess` to `public` and perform a **full** `npx rayfin up` |
 | Function gateway | Confirm signed-out invocation and SQL token binding in the tenant, without any extra public game entities |
 | Database | An authorized app admin enables `AnonymousEnabled`; start off |
@@ -303,6 +303,35 @@ hand-edit it. Updates to existing deployments use a reviewed pull/merge of your
 template copy, `npm ci`, `npm run check`, reviewed SQL migrations if needed, and
 full `npx rayfin up`. Never use schema `--force` without a separate destructive
 migration review. Observe the documented Functions publishing cooldown.
+
+### Dependency maintenance
+
+The full online audit on the
+[public CI runner](https://github.com/mustafaasiroglu/quizcrowd-fabric/actions/runs/42216044575)
+reported **0 known vulnerabilities** for the validated lockfile. Local registry
+proxy results initially missed advisories, so offline or stale mirror output
+is not treated as a clean online scan. CI now runs
+`npm audit --audit-level=high` on every push and pull request.
+
+The pinned Rayfin 1.36.2 toolchain requires these explicit mitigations:
+
+| Dependency | Pin / override | Reason |
+| --- | --- | --- |
+| Zod | Application 4.6.7 and scoped `rayfin-tools-common` override | GHSA-mrhx-c7xc-m3w5 constrained-collection memory exhaustion |
+| CLI MSAL Node | Scoped `rayfin-cli` override to 7.2.0 | GHSA-xcx6-jx8p-x3h5 authorization-code parameter disclosure |
+| glob | 14.0.3 override, selecting patched minimatch transitively | GHSA-3g3m-2fjr-6pw4 cancellation bypass and GHSA-g3hv-75wg-m249 minimatch denial of service |
+| Vite / Vitest | 8.3.5 / 4.1.12 | Development-server/editor and mock-registration/path-traversal advisories |
+
+After these updates, local checks exercised CLI startup, MSAL client
+construction (not a live sign-in), glob/ZIP packaging, actual DAB configuration
+generation and actual Function bundling. Both local and clean Ubuntu CI
+typechecks/tests/build passed. Live sign-in, publishing, SQL access and guest
+authorization still require the release gates below.
+
+Review these overrides when updating the SDK and remove them only after the
+upstream dependencies are patched and integration checks pass. Do not follow
+an `npm audit fix --force` recommendation that downgrades Rayfin to an older
+API. Audit results are point-in-time evidence, not a production security promise.
 
 ## Release gates
 

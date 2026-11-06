@@ -83,6 +83,7 @@ difference between local and deployed external connections.
 | `npm test` | Domain/service authorization, actual SDK metadata and mocked-HTTP SDK wire tests |
 | `npm run build` | Local production frontend plus server/model compilation; no cloud writes |
 | `npm run check` | Typecheck, tests and build |
+| `npm audit --audit-level=high` | Full online dependency audit; also enforced in CI |
 | `npm run dev:frontend` | Loopback-only Vite frontend |
 | `npm run dev` | Rayfin frontend + local Function development (requires configured environment) |
 | `npx rayfin functions init --path rayfin/functions` | Regenerate Function types; preserves existing implementation |
@@ -114,15 +115,13 @@ correctness over high-throughput scale; load-test your capacity before an event.
 Image upload, AI survey generation, automatic retention, moderator tools and
 custom domains are not implemented. See the [full operational limitations](docs/architecture.md#limitations).
 
-A completed production dependency scan identified Zod advisory
-[GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5).
-Application validation and the SDK's transitive validator are now pinned to
-patched Zod **4.6.7**, including a scoped `rayfin-tools-common` override. The
-subsequent CLI install reported three moderate advisories; a complete
-post-remediation online report was blocked by the registry proxy's rate limit
-and public-registry TLS failure. Offline audit output is not treated as a clean
-online scan. Complete advisory review before production release; never use
-`npm audit fix --force` to silently change the verified SDK version.
+The [public CI run](https://github.com/mustafaasiroglu/quizcrowd-fabric/actions/runs/42216044575)
+passed the clean install, all 31 tests, typechecks/build and a full online
+dependency audit reporting **0 known vulnerabilities**. CI retains a
+high/critical advisory gate. The lockfile uses patched Vite/Vitest plus explicit
+Zod, CLI MSAL and glob overrides; see [dependency maintenance](docs/deployment.md#dependency-maintenance).
+This is a point-in-time audit, not a security certification. Never use
+`npm audit fix --force` to silently downgrade the verified Fabric SDK.
 
 ## Attribution and distribution
 

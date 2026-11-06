@@ -142,10 +142,10 @@ other creators' private quiz content.
 - **Trusted publisher:** The app item owner can change code and has external
   SQL permissions. Protect deployment rights; application checks cannot defend
   against a malicious publisher with database access.
-- **Dependency review:** Zod is pinned to patched 4.6.7 in the application and
-  via a scoped SDK override for GHSA-mrhx-c7xc-m3w5. A subsequent CLI install
-  reported three moderate advisories. Registry restrictions prevented obtaining
-  a complete post-remediation online report; offline output is not proof of a
-  clean scan. Review all dependencies before release.
+- **Dependency maintenance:** Public CI audits the full dependency tree and
+  fails on high/critical advisories. The implementation validation reported
+  zero known advisories after patching Vite/Vitest and overriding SDK Zod,
+  CLI MSAL and glob dependencies. Reevaluate the overrides during SDK updates;
+  an advisory scan does not establish platform authorization or future safety.
 - **Operational gates:** No live capacity test, no production SLA claim, and
   no open-source license grant for the adapted QuizCrowd application.
