@@ -6,7 +6,9 @@ publisher-controlled anonymous attendance, and application data persisted in
 
 > **Preview implementation template, not a production-certified deployment.**
 > Local typechecks, game/authorization tests and the real Fabric Functions
-> bundler are exercised. No live Fabric workspace has been deployed or tested.
+> bundler are exercised. Initial Fabric deployment and private SQL schema
+> initialization have been exercised in a test workspace; signed-in end-to-end
+> game flows and runtime SQL identity still await live verification.
 > In particular, anonymous Function invocation with app-identity SQL access
 > must be confirmed in your tenant before enabling public attendance.
 > See the [release gates](docs/deployment.md#release-gates).

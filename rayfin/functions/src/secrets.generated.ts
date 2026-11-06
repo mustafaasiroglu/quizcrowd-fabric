@@ -20,7 +20,11 @@
  * never written to disk.
  */
 
-// No secrets are declared in rayfin.yml, so the registry stays empty and
-// ctx.Secrets exposes nothing.
+declare module '@microsoft/fabric-user-data-functions' {
+  interface RayfinSecretRegistry {
+    QUIZCROWD_SQL_DATABASE: string;
+    QUIZCROWD_SQL_SERVER: string;
+  }
+}
 
 export {};

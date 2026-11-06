@@ -11,6 +11,7 @@ services:
       enabled: false
     allowedRedirectUris:
       - http://localhost:5173
+      - http://127.0.0.1:5173
   data:
     enabled: true
     dialect: mssql
@@ -31,3 +32,10 @@ services:
     auth:
       type: application
     buildCommand: npm run build
+  storage:
+    enabled: false
+secrets:
+  - name: QUIZCROWD_SQL_SERVER
+    description: Private writable Fabric SQL server FQDN
+  - name: QUIZCROWD_SQL_DATABASE
+    description: Private QuizCrowd application SQL database name

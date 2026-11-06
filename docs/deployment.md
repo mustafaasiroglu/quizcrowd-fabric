@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-Use a dedicated **test** workspace first. No command in this repository has
-provisioned a live resource.
+Use a dedicated **test** workspace first. Deployment commands create real
+resources; local checks and CI do not deploy anything automatically.
 
 | Requirement | Publisher responsibility |
 | --- | --- |
@@ -61,9 +61,12 @@ As a trusted database administrator:
 2. Obtain its actual `serverFqdn` and `databaseName` from the Fabric item's
    connection information. Do not copy a Warehouse/Lakehouse connection or use
    a database password.
-3. Put those two **non-secret deployment coordinates** into
-   `rayfin/functions/src/deployment.ts`. They are server-only. Never accept a
-   SQL server, database, query text or resource token from a browser request.
+3. Keep those two **non-secret deployment coordinates** for the encrypted
+   server-side app configuration in step 3. Do not edit source constants or
+   put the coordinates in frontend environment variables. The SQL server
+   configuration accepts Fabric's optional `,1433` metadata suffix.
+   Never accept a SQL server, database, query text or resource token from a
+   browser request.
 4. Provision the app owner's trusted Entra identity as a contained SQL user using
    your organization's approved Entra/Fabric administration procedure.
 5. Grant only the private application schema access it needs. Do not grant the
@@ -138,6 +141,24 @@ npx rayfin login
 npx rayfin up --workspace "<workspace-name>"
 npx rayfin up status
 ```
+
+The first deployment creates the target for the supported secrets commands.
+Before sharing the app, set its server-only SQL configuration using the actual
+connection information from step 2:
+
+```powershell
+'<actual-server-fqdn>' | npx rayfin secret set QUIZCROWD_SQL_SERVER --stdin
+'<actual-database-name>' | npx rayfin secret set QUIZCROWD_SQL_DATABASE --stdin
+npx rayfin up functions deploy
+```
+
+Replace the placeholders before running these commands. The CLI stores the
+values encrypted in the target app. Only the names/descriptions in `rayfin.yml`
+and the generated `secrets.generated.ts` types belong in source control; never
+hand-edit the generated file. Missing configuration fails closed. SQL access
+still uses the app owner's Entra token, not a password or a stored access token.
+For local Functions only, supply the same named environment variables through
+your approved local configuration mechanism.
 
 This is a real deployment and can create/update Fabric items and consume
 capacity. Preserve the CLI-generated local deployment registry, but do not
@@ -335,6 +356,17 @@ API. Audit results are point-in-time evidence, not a production security promise
 
 ## Release gates
 
+An initial test-workspace deployment created the app on an existing F8 capacity,
+deployed the Function, stored its SQL coordinates through app secrets, and
+initialized/read back the private SQL schema with anonymous access off. Actual
+signed-out probes were rejected: Function calls returned HTTP 403
+(`Anonymous access is not allowed for function invocation`), and CallerIdentity
+read/create returned GraphQL authorization errors. This verifies the baseline
+boundary, not public attendance or app-owner SQL token binding. Signed-in
+end-to-end flows and trusted admin bootstrap remain unverified while the
+interactive browser/`Item.Execute.All` authentication gate is unresolved.
+No tenant-wide anonymous setting was changed.
+
 Local tests use domain objects and a serialized transactional test double. The
 SDK metadata test uses the real built model and real policy DSL. Wire tests use
 the real SDK with mocked HTTP responses, including both encoded and object
@@ -374,6 +406,9 @@ attendee data as test evidence.
 | --- | --- |
 | App says "Not configured yet" | No backend has been configured; fill local runtime values or deploy to the selected test workspace |
 | Entra popup blocked | Trigger sign-in from the button; do not put async work before the SDK sign-in call |
+| Embedded preview cannot open the Fabric popup | Open the deployed app in a normal browser with popups permitted; do not make protected assets public as a workaround |
+| Direct Entra token exchange returns `AUTH_FAILED` | Use a delegated token in the owning tenant, with the deployment's Fabric/Power BI audience and `Item.Execute.All`; a generic Fabric CLI token is not sufficient |
+| Azure CLI returns `AADSTS65002` for `Item.Execute.All` | The Microsoft first-party client needs API-owner preauthorization; repeating user consent does not grant it. Use the supported interactive Fabric broker or an organization-approved client already authorized for that scope; do not change accounts or weaken app authorization |
 | Signed-in user cannot execute | Owning tenant, app Execute permission and tenant workload enablement; Fabric workspace role alone is not a substitute for app item access |
 | Caller identity verification fails | Deployed CallerIdentity policy/schema, same signed-in client and expected subject; do not weaken the policy |
 | SQL socket hang-up | Use pinned mssql 12.6.0/tedious >=19.2.2, actual SQL Database writable endpoint, `encrypt: true` and a valid app-owner token |
