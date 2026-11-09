@@ -274,7 +274,7 @@ try {
         await inspectScreen(`${label}-author`); await screenshot(`${label}-author`);
         await click('Save & Open Lobby'); await until('!!document.querySelector(".host-lobby")');
         const saved = await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="create").draft');
-        assert.equal(Object.hasOwn(saved, 'answerDuration'), false);
+        assert.deepEqual(saved.answerDuration, { mode: 'custom', seconds: 35 });
         assert.deepEqual(saved.questions.map(q=>q.duration), [35,50]);
       });
       await check(`${label}: host QR, timer, reveal, leaderboard and podium`, async () => {
@@ -322,14 +322,14 @@ try {
         assert.deepEqual(await evaluate('[...document.querySelectorAll(".question-heading .duration input")].map(e=>Number(e.value))'), [35,35]);
         await click('Save & Open Lobby'); await until('!!document.querySelector(".host-lobby")');
         const updated = await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="edit" && r.draft).draft');
-        assert.equal(Object.hasOwn(updated, 'answerDuration'), false);
+        assert.deepEqual(updated.answerDuration, { mode: 'custom', seconds: 35 });
         assert.deepEqual(updated.questions.map(q=>q.duration), [35,35]);
         await pointerClick('document.querySelector(".small-brand")'); await until('!!document.querySelector(".session-open")');
         await pointerClick('document.querySelector(".session-open")'); await until('!!document.querySelector(".author")');
-        assert.equal(await evaluate('document.querySelector(\'input[name="answer-duration"][value="same"]\').checked'), true);
-        assert.equal(await evaluate('document.querySelector("#shared-duration").value'), '35');
-        assert.equal(await evaluate('document.querySelectorAll(".question-heading .duration").length'), 0);
-        await inspectScreen(`${label}-uniform-reopen`); await screenshot(`${label}-uniform-reopen`);
+        assert.equal(await evaluate('document.querySelector(\'input[name="answer-duration"][value="custom"]\').checked'), true);
+        assert.equal(await evaluate('document.querySelector("#shared-duration")===null'), true);
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".question-heading .duration input")].map(e=>Number(e.value))'), [35,35]);
+        await inspectScreen(`${label}-equal-custom-reopen`); await screenshot(`${label}-equal-custom-reopen`);
         await pointerClick('document.querySelector(\'[aria-label="Go back"]\')'); await until('!!document.querySelector(".session-menu")');
         assert.equal(await evaluate('document.querySelector(".session-metrics").textContent'), '2 Questions0 Responses');
         await pointerClick('document.querySelector(".session-menu summary")'); await clickWithConfirmation('Delete', false);

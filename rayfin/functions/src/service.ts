@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { getAnswerDuration } from '@rayfin-app/shared';
 import type { Store } from './sql-store.js';
 import {
   answer, control, createGame, Denied, Conflict, draftSchema, join, own, preview,
@@ -75,16 +76,19 @@ export async function execute(
         result = { updated: true };
         break;
       }
-      case 'edit':
+      case 'edit': {
         own(game, subject);
         if (!input.draft) return { ...summary(game), draft: authorDraft(game) };
         if (readOnly(game)) throw new Conflict('Started sessions and sessions with responses are read-only. Duplicate this session to edit a new copy.');
         if (input.draft.mode !== game.mode) throw new Conflict('Content type cannot be changed. Create a new quiz or survey instead.');
-        visibilityAllowed(input.draft, settings);
-        Object.assign(game, input.draft);
+        const draft = draftSchema.parse({ ...input.draft,
+          answerDuration: input.draft.answerDuration ?? game.answerDuration ?? getAnswerDuration(input.draft) });
+        visibilityAllowed(draft, settings);
+        Object.assign(game, draft);
         game.version++;
         result = { id: game.id };
         break;
+      }
       case 'delete':
         own(game, subject);
         await tx.remove(game.id);

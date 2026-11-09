@@ -73,12 +73,13 @@ Changing back uses the remembered shared value, or the first question's value
 for legacy custom content, deterministically. New questions inherit that value.
 Removal/reordering does not lose the setting.
 
-Mode is frontend-only and is never saved or sent to the API. Opening an editor
-with equal question times selects shared mode; unequal times select custom,
-including existing content. Only the existing per-question duration values
-persist and survive reopen/duplicate. Equal saved values reopen as shared even
-if custom was selected before saving. There is no new DB field or migration.
-The existing server duration validation and edit lock protect the real times.
+The selected mode and remembered shared seconds persist in the existing game
+JSON alongside effective question durations. Custom stays selected on
+save/reopen/duplicate even when every question has the same time. Only legacy
+content without this metadata infers an initial shared/custom choice from its
+question values; opening it does not rewrite it. No SQL column/table or migration
+is needed. Server validation rejects inconsistent shared-mode times and the edit
+lock protects both the setting and effective times.
 This does not remove live countdowns or change survey timed-collection semantics.
 
 ## Exactly two themes
@@ -146,7 +147,7 @@ Real browser captures and the report are saved under the ignored directory
 | Editor | `rayfin\.temp\compact-review\dark-desktop-author.png` |
 | Same for all | `rayfin\.temp\compact-review\dark-desktop-settings.png` |
 | Custom durations | `rayfin\.temp\compact-review\light-mobile-custom-duration.png` |
-| Equal durations reopened | `rayfin\.temp\compact-review\dark-desktop-uniform-reopen.png` |
+| Equal custom durations reopened | `rayfin\.temp\compact-review\dark-desktop-equal-custom-reopen.png` |
 | QR lobby | `rayfin\.temp\compact-review\light-mobile-host-lobby.png` |
 | Host question | `rayfin\.temp\compact-review\dark-desktop-host-question.png` |
 | Reveal | `rayfin\.temp\compact-review\light-desktop-host-reveal.png` |

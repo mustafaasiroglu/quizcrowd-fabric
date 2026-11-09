@@ -117,10 +117,11 @@ and actual question-submission count. Home is the only session-list surface.
 Purple/indigo and pink brand accents replace the previous teal interpretation.
 Content type is fixed by the creation action, including on server updates.
 Answer duration defaults to **Same for all**, set once in the settings panel.
-**Customize per question** exposes a duration at each question. Mode is frontend-only:
-equal question durations reopen as shared, unequal durations as custom. Only the
-existing question durations are saved and used by game timers/scoring. Mixed durations retain
-their values in custom mode. A duplicate starts a new private
+**Customize per question** exposes a duration at each question. The selected mode
+and remembered shared seconds persist in the existing game JSON, so custom stays
+selected even when question times happen to match. Only older content without
+the setting infers an initial mode from its question durations. Effective
+question durations still drive game timers/scoring. A duplicate starts a new private
 lobby without activity. Six-digit codes preserve leading zeros; existing UUID
 invitations and old codes remain compatible through server-side resolution.
 The original QR lobby, colorful answers, leaderboard and podium remain.

@@ -10,6 +10,10 @@ export interface Question {
   correctIndex: number | null;
   duration: number;
 }
+export interface AnswerDuration {
+  mode: 'same' | 'custom';
+  seconds: number;
+}
 export interface Draft {
   title: string;
   mode: 'quiz' | 'survey';
@@ -18,6 +22,16 @@ export interface Draft {
   lateJoin: boolean;
   showAnswer: 'wait_all' | 'after_response' | 'never';
   questions: Question[];
+  answerDuration?: AnswerDuration;
+}
+export function getAnswerDuration(draft: Pick<Draft, 'questions' | 'answerDuration'>): AnswerDuration {
+  if (draft.answerDuration) return draft.answerDuration;
+  const seconds = draft.questions[0]?.duration ?? 20;
+  return { mode: draft.questions.every(q => q.duration === seconds) ? 'same' : 'custom', seconds };
+}
+export function setAnswerDuration(draft: Draft, answerDuration: AnswerDuration): Draft {
+  return { ...draft, answerDuration, questions: draft.questions.map(q =>
+    ({ ...q, duration: answerDuration.mode === 'same' ? answerDuration.seconds : q.duration })) };
 }
 export interface PublicQuestion {
   text: string;

@@ -134,19 +134,26 @@ other creators' private quiz content.
 
 Content type is immutable after creation, even in an empty lobby. The server
 rejects quiz/survey type mutations; duplicate preserves the source type.
-Answer-duration mode is frontend-only state. On opening the editor, equal
-question durations select **Same for all**; unequal durations select **Customize
-per question**. No mode or separate shared-duration field is stored or sent to
-the API. Only the existing `Question.duration` values persist and drive runtime
-timeouts and speed scoring. The unchanged server validation requires integer
-durations from 5 through 120 seconds. No SQL schema/data migration is needed.
+Optional `answerDuration: { mode: 'same' | 'custom', seconds: number }` metadata
+persists in the existing game JSON. Explicit choices survive create/save/reopen,
+read-only views and duplicate; equal-valued custom questions remain custom.
+Only legacy content without metadata infers an initial mode from its question
+durations, without rewriting stored content during reads. New saves/duplicates
+retain the normalized setting. No SQL column/table or data migration is needed.
+An update that omits metadata preserves an already stored explicit choice and
+still validates its shared-value consistency rather than silently reinferring it.
+
+The effective `Question.duration` values still drive runtime timeouts and speed
+scoring. The server requires integer metadata and question durations from 5
+through 120 seconds, and rejects shared-mode payloads whose question durations
+do not match the shared seconds. Custom seconds remember the value for switching
+back/new questions, not a second runtime deadline.
 
 Changing shared to custom retains the current effective duration in each
-question. Changing back applies the shared seconds remembered in that editor
-session, initially the first question's value. New questions inherit that
-value; removing/reordering questions preserves their real durations. Reopening
-always recomputes the mode from question values, even if custom was selected
-when equal values were saved. The started/response edit lock protects timing.
+question. Changing back applies the remembered shared seconds, initially the
+first question's value for legacy content. New questions inherit that value;
+removing/reordering questions preserves the mode and other real durations.
+The started/response edit lock protects the mode, shared value and question times.
 
 The organization-only audience uses the platform's tenant-bound Entra app
 authentication and Execute permissions, then the existing verified caller boundary.

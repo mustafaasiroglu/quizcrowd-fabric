@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Draft, GameView, Phase, QuizSummary, SettingsView } from '@rayfin-app/shared';
+import { getAnswerDuration } from '@rayfin-app/shared';
 
 export class Denied extends Error {}
 export class Conflict extends Error {}
@@ -11,6 +12,7 @@ export const draftSchema = z.object({
   publicAcknowledged: z.boolean().default(false),
   lateJoin: z.boolean().default(false),
   showAnswer: z.enum(['wait_all', 'after_response', 'never']).default('wait_all'),
+  answerDuration: z.object({ mode: z.enum(['same', 'custom']), seconds: z.number().int().min(5).max(120) }).strict().optional(),
   questions: z.array(z.object({
     text: z.string().trim().min(1).max(1000),
     options: z.array(z.string().trim().min(1).max(300)).min(2).max(6)
@@ -20,6 +22,9 @@ export const draftSchema = z.object({
   }).strict()).min(1).max(40),
 }).strict().superRefine((draft, ctx) => {
   draft.questions.forEach((q, i) => {
+    if (draft.answerDuration?.mode === 'same' && q.duration !== draft.answerDuration.seconds) {
+      ctx.addIssue({ code: 'custom', message: 'Every question must use the shared answer duration', path: ['questions', i, 'duration'] });
+    }
     if (draft.mode === 'quiz' && (q.correctIndex === null || q.correctIndex >= q.options.length)) {
       ctx.addIssue({ code: 'custom', message: 'Select a correct answer', path: ['questions', i] });
     }
@@ -86,7 +91,7 @@ export function createGame(input: unknown, subject: string | null, settings: Set
   const draft = draftSchema.parse(input);
   visibilityAllowed(draft, settings);
   return {
-    ...draft, id: randomUUID(), code: randomInt(1000000).toString().padStart(6, '0'),
+    ...draft, answerDuration: getAnswerDuration(draft), id: randomUUID(), code: randomInt(1000000).toString().padStart(6, '0'),
     owner, createdAt: now, phase: 'lobby', version: 0, questionIndex: -1,
     questionStartedAt: 0, revealStartedAt: 0, participants: [], answers: [],
   };
@@ -99,7 +104,7 @@ export function summary(game: Game): QuizSummary {
 }
 export function authorDraft(game: Game): Draft {
   const { title, mode, visibility, publicAcknowledged, lateJoin, showAnswer, questions } = game;
-  return { title, mode, visibility, publicAcknowledged, lateJoin, showAnswer, questions };
+  return { title, mode, visibility, publicAcknowledged, lateJoin, showAnswer, questions, answerDuration: getAnswerDuration(game) };
 }
 export function preview(game: Game, subject: string | null, settings: Settings) {
   if (!subject) guestAllowed(game, settings);

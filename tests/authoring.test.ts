@@ -2,6 +2,7 @@ import sql from 'mssql';
 import { describe, expect, it, vi } from 'vitest';
 import { execute } from '../rayfin/functions/src/service';
 import { authorDraft, createGame, draftSchema } from '../rayfin/functions/src/domain';
+import { getAnswerDuration, setAnswerDuration } from '../packages/shared/src/index';
 import { isJoinCodeCollision, retryJoinCode, type Store, type UnitOfWork } from '../rayfin/functions/src/sql-store';
 
 const random = vi.hoisted(() => ({ value: 7 }));
@@ -9,8 +10,8 @@ vi.mock('node:crypto', async (original) => ({ ...await original<typeof import('n
 const settings = { anonymousEnabled: false, guestEpoch: 0 };
 const draft = { title: 'Team session', mode: 'quiz', visibility: 'internal', publicAcknowledged: false,
   lateJoin: false, showAnswer: 'wait_all', questions: [{ text: 'Question', options: ['A', 'B'], correctIndex: 0, duration: 20 }] };
-function fixture() {
-  let games = [createGame(draft, 'owner', settings, 1000)];
+function fixture(mode: 'quiz' | 'survey' = 'quiz') {
+  let games = [createGame({ ...draft, mode, questions: draft.questions.map(q => ({ ...q, correctIndex: mode === 'quiz' ? q.correctIndex : null })) }, 'owner', settings, 1000)];
   const legacy = 'A1B2C3D4E5';
   let queue = Promise.resolve();
   const store: Store = { transact<T>(work: (tx: UnitOfWork) => Promise<T>): Promise<T> {
@@ -41,43 +42,89 @@ describe('six-digit codes and owner authoring transactions (test store)', () => 
     const created = await execute(f.store, { command: 'create', draft: survey }, 'owner', '') as { id: string };
     await expect(execute(f.store, { command: 'edit', id: created.id, draft }, 'owner', '')).rejects.toThrow('Content type cannot be changed');
   });
-  it('preserves actual question durations through save, reopen and duplicate without mode metadata', async () => {
-    const f = fixture();
-    const same = { ...authorDraft(f.game()), questions: f.game().questions.map(q => ({ ...q, duration: 35 })) };
+  it.each(['quiz', 'survey'] as const)('preserves explicit equal-valued custom mode through JSON, reopen and duplicate for %s', async mode => {
+    const f = fixture(mode);
+    expect(f.game().answerDuration).toEqual({ mode: 'same', seconds: 20 });
+    const same = setAnswerDuration(authorDraft(f.game()), { mode: 'same', seconds: 35 });
     await execute(f.store, { command: 'edit', id: f.game().id, draft: same }, 'owner', '');
     expect(f.game().questions.map(q => q.duration)).toEqual([35]);
-    expect(await execute(f.store, { command: 'edit', id: f.game().id }, 'owner', '')).toMatchObject({ draft: { questions: [{ duration: 35 }] } });
-    const custom = { ...same, questions: [...same.questions, { ...same.questions[0], text: 'Second', duration: 50 }] };
+    expect(await execute(f.store, { command: 'edit', id: f.game().id }, 'owner', '')).toMatchObject({ draft: { answerDuration: { mode: 'same', seconds: 35 } } });
+    const custom = setAnswerDuration({ ...same, questions: [...same.questions, { ...same.questions[0], text: 'Second' }] }, { mode: 'custom', seconds: 35 });
     await execute(f.store, { command: 'edit', id: f.game().id, draft: custom }, 'owner', '');
+    const roundtrip = draftSchema.parse(JSON.parse(JSON.stringify(authorDraft(f.game()))));
+    expect(roundtrip.answerDuration).toEqual({ mode: 'custom', seconds: 35 });
+    expect(roundtrip.questions.map(q => q.duration)).toEqual([35, 35]);
+    expect(await execute(f.store, { command: 'edit', id: f.game().id }, 'owner', '')).toMatchObject({ draft: roundtrip });
+    const withoutMode = { ...roundtrip }; delete withoutMode.answerDuration;
+    await execute(f.store, { command: 'edit', id: f.game().id, draft: withoutMode }, 'owner', '');
+    expect(f.game().answerDuration).toEqual({ mode: 'custom', seconds: 35 });
     const copy = await execute(f.store, { command: 'duplicate', id: f.game().id }, 'owner', '') as { id: string };
-    expect(f.games().find(g => g.id === copy.id)).toMatchObject({ questions: [{ duration: 35 }, { duration: 50 }] });
-    for (const game of f.games()) expect(game).not.toHaveProperty('answerDuration');
-    expect(f.game().questions.map(q => q.duration)).toEqual([35, 50]);
+    expect(f.games().find(g => g.id === copy.id)).toMatchObject({ mode, answerDuration: { mode: 'custom', seconds: 35 }, questions: [{ duration: 35 }, { duration: 35 }] });
+    expect(await execute(f.store, { command: 'edit', id: copy.id }, 'owner', '')).toMatchObject({ readOnly: false, draft: { mode, answerDuration: roundtrip.answerDuration, questions: roundtrip.questions } });
+    const created = await execute(f.store, { command: 'create', draft: roundtrip }, 'owner', '') as { id: string };
+    expect(f.games().find(g => g.id === created.id)?.answerDuration).toEqual({ mode: 'custom', seconds: 35 });
     f.game().phase = 'question';
     await expect(execute(f.store, { command: 'edit', id: f.game().id, draft: same }, 'owner', '')).rejects.toThrow('read-only');
-    expect(f.game().questions.map(q => q.duration)).toEqual([35, 50]);
+    expect(f.game().answerDuration).toEqual({ mode: 'custom', seconds: 35 });
+    expect(f.game().questions.map(q => q.duration)).toEqual([35, 35]);
   });
-  it('returns existing mixed durations unchanged without rewriting stored content on read', async () => {
-    const f = fixture();
-    f.game().questions.push({ ...f.game().questions[0], duration: 50 });
+  it.each([20, 50])('infers missing legacy mode once for [20,%s] without rewriting stored content on read', async duration => {
+    const f = fixture(); delete f.game().answerDuration;
+    f.game().questions.push({ ...f.game().questions[0], duration });
     const before = structuredClone(f.game());
-    expect(await execute(f.store, { command: 'edit', id: f.game().id }, 'owner', '')).toMatchObject({ draft: { questions: [{ duration: 20 }, { duration: 50 }] } });
+    const mode = duration === 20 ? 'same' : 'custom';
+    expect(await execute(f.store, { command: 'edit', id: f.game().id }, 'owner', '')).toMatchObject({ draft: { answerDuration: { mode, seconds: 20 }, questions: [{ duration: 20 }, { duration }] } });
     expect(f.game()).toEqual(before);
     const copy = await execute(f.store, { command: 'duplicate', id: f.game().id }, 'owner', '') as { id: string };
-    expect(f.games().find(g => g.id === copy.id)?.questions.map(q => q.duration)).toEqual([20, 50]);
+    expect(f.games().find(g => g.id === copy.id)).toMatchObject({ answerDuration: { mode, seconds: 20 }, questions: [{ duration: 20 }, { duration }] });
+    const revised = { ...authorDraft(f.game()), questions: f.game().questions.map(q => ({ ...q, duration: 35 })) };
+    delete revised.answerDuration;
+    await execute(f.store, { command: 'edit', id: f.game().id, draft: revised }, 'owner', '');
+    expect(f.game().answerDuration).toEqual({ mode: 'same', seconds: 35 });
   });
-  it('validates real question durations and rejects unnecessary duration-mode metadata', () => {
-    expect(createGame(draft, 'owner', settings, 1000)).not.toHaveProperty('answerDuration');
+  it('validates both real question durations and explicit mode/shared seconds', () => {
+    expect(createGame(draft, 'owner', settings, 1000).answerDuration).toEqual({ mode: 'same', seconds: 20 });
     for (const seconds of [0, 4, 121, 20.5, '20']) {
       expect(draftSchema.safeParse({ ...draft, questions: draft.questions.map(q => ({ ...q, duration: seconds })) }).success).toBe(false);
+      expect(draftSchema.safeParse({ ...draft, answerDuration: { mode: 'custom', seconds } }).success).toBe(false);
     }
     expect(draftSchema.safeParse({ ...draft, answerDuration: { mode: 'same', seconds: 30 } }).success).toBe(false);
-    expect(draftSchema.safeParse({ ...draft, answerDuration: { mode: 'custom', seconds: 30 } }).success).toBe(false);
+    expect(draftSchema.safeParse({ ...draft, answerDuration: { mode: 'custom', seconds: 30 } }).success).toBe(true);
+    for (const answerDuration of [{ mode: 'invalid', seconds: 20 }, { mode: 'custom' }, { mode: 'same', seconds: 20, extra: true }]) {
+      expect(draftSchema.safeParse({ ...draft, answerDuration }).success).toBe(false);
+    }
     expect(draftSchema.safeParse({ ...draft, questions: [5, 120].map(duration => ({ ...draft.questions[0], duration })) }).success).toBe(true);
+  });
+  it('rejects inconsistent shared-mode creates/edits without mutation and locks response-only timing edits', async () => {
+    const f = fixture(), before = structuredClone(f.game());
+    const inconsistent = { ...authorDraft(f.game()), answerDuration: { mode: 'same', seconds: 35 } };
+    await expect(execute(f.store, { command: 'create', draft: inconsistent }, 'owner', '')).rejects.toThrow('shared answer duration');
+    await expect(execute(f.store, { command: 'edit', id: f.game().id, draft: inconsistent }, 'owner', '')).rejects.toThrow('shared answer duration');
+    const withoutMode = { ...authorDraft(f.game()), questions: f.game().questions.map(q => ({ ...q, duration: 35 })) };
+    delete withoutMode.answerDuration;
+    await expect(execute(f.store, { command: 'edit', id: f.game().id, draft: withoutMode }, 'owner', '')).rejects.toThrow('shared answer duration');
+    expect(f.games()).toEqual([before]);
+    f.game().answers.push({ participantId: 'p', questionIndex: 0, option: 0, correct: true, points: 2 });
+    await expect(execute(f.store, { command: 'edit', id: f.game().id, draft: setAnswerDuration(authorDraft(f.game()), { mode: 'custom', seconds: 20 }) }, 'owner', '')).rejects.toThrow('read-only');
+    expect(f.game().answerDuration).toEqual(before.answerDuration);
+  });
+  it('retains the remembered shared value and custom choice through question changes and mode switches', () => {
+    const original = authorDraft(fixture().game());
+    const custom = setAnswerDuration(original, { mode: 'custom', seconds: 35 });
+    custom.questions[0].duration = 50;
+    custom.questions.push({ ...custom.questions[0], text: 'Second', duration: getAnswerDuration(custom).seconds });
+    expect(original.questions[0].duration).toBe(20);
+    expect(getAnswerDuration(custom)).toEqual({ mode: 'custom', seconds: 35 });
+    const same = setAnswerDuration(custom, { ...getAnswerDuration(custom), mode: 'same' });
+    expect(same.questions.map(q => q.duration)).toEqual([35, 35]);
+    const again = setAnswerDuration(same, { ...getAnswerDuration(same), mode: 'custom' });
+    again.questions.splice(0, 1);
+    expect(getAnswerDuration(again)).toEqual({ mode: 'custom', seconds: 35 });
+    expect(getAnswerDuration({ questions: [] })).toEqual({ mode: 'same', seconds: 20 });
   });
   it('uses the saved question duration for real scoring', async () => {
     const f = fixture();
-    const same = { ...authorDraft(f.game()), questions: f.game().questions.map(q => ({ ...q, duration: 40 })) };
+    const same = setAnswerDuration(authorDraft(f.game()), { mode: 'same', seconds: 40 });
     await execute(f.store, { command: 'edit', id: f.game().id, draft: same }, 'owner', '');
     const ticket = await execute(f.store, { command: 'join', id: f.game().id, nickname: 'A' }, 'a', '', 1000) as { token: string };
     await execute(f.store, { command: 'control', id: f.game().id, action: 'start', version: f.game().version }, 'owner', '', 2000);
@@ -85,12 +132,9 @@ describe('six-digit codes and owner authoring transactions (test store)', () => 
     expect(f.game().answers[0].points).toBe(1250);
   });
   it.each(['quiz', 'survey'] as const)('uses per-question custom timeouts for %s without changing timed live semantics', async (mode) => {
-    const f = fixture();
-    const custom = { ...authorDraft(f.game()),
+    const f = fixture(mode);
+    const custom = { ...setAnswerDuration(authorDraft(f.game()), { mode: 'custom', seconds: 35 }),
       questions: [35, 50].map((duration, i) => ({ ...f.game().questions[0], text: `Question ${i}`, duration })) };
-    if (mode === 'survey') {
-      f.game().mode = 'survey'; custom.mode = 'survey'; custom.questions.forEach(q => { q.correctIndex = null; });
-    }
     await execute(f.store, { command: 'edit', id: f.game().id, draft: custom }, 'owner', '');
     const ticket = await execute(f.store, { command: 'join', id: f.game().id, nickname: 'A' }, 'a', '', 1000) as { token: string };
     await execute(f.store, { command: 'control', id: f.game().id, action: 'start', version: f.game().version }, 'owner', '', 2000);

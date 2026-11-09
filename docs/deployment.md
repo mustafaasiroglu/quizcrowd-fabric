@@ -382,14 +382,15 @@ migration review. Observe the documented Functions publishing cooldown.
 
 ### Updating existing quizzes to shared/custom durations
 
-Answer-duration mode is frontend-only, inferred from existing question durations
-whenever the editor opens. Equal durations select **Same for all**; mixed
-durations select **Customize per question**. No new DB field, saved mode,
-schema migration or existing-game rewrite is required. Only the existing
-per-question duration values persist. Duplicate preserves those values, while
-started/responded content stays read-only. Deploy updated Functions before the
-frontend for the separate question-count and content-type changes. Content type is now
-immutable after creation, including direct API updates.
+The selected answer-duration mode and remembered shared seconds persist as
+optional `answerDuration` metadata in the existing game JSON, not a new SQL
+column/table. Equal-valued custom questions remain custom after save/reopen.
+Only legacy content without metadata infers its initial mode from question
+values. No schema migration or existing-game rewrite is required: reads leave
+old JSON unchanged and future saves/duplicates include the normalized setting.
+Duplicate preserves it, while started/responded content stays read-only.
+Deploy updated Functions before the frontend so the API accepts/validates the
+new metadata. Content type remains immutable, including direct API updates.
 
 Keep the existing `AnonymousEnabled`, `GuestEpoch`, administrator assignments and
 hosting/runtime configuration unchanged. Do not rerun the six-digit-code

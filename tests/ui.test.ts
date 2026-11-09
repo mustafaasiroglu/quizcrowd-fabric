@@ -122,7 +122,7 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(editable).toContain('Same for all');
     expect(editable).toContain('id="shared-duration"');
     expect(editable).not.toContain('class="duration"');
-    const custom = ui.renderEditor({ questions: [20, 35].map(duration => ({ text: 'Question', options: ['A', 'B'], correctIndex: 0, duration })) });
+    const custom = ui.renderEditor({ answerDuration: { mode: 'custom', seconds: 20 }, questions: [20, 35].map(duration => ({ text: 'Question', options: ['A', 'B'], correctIndex: 0, duration })) });
     expect(custom).toContain('class="duration"');
     expect(custom).not.toContain('id="shared-duration"');
     const locked = ui.renderEditor({}, false, true);
@@ -130,6 +130,14 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(locked).toContain('class="author-content" disabled=""');
     expect(locked).not.toContain('Save &amp; Open Lobby');
     expect(locked).not.toContain('Remove question');
+  });
+  it('keeps equal-valued custom mode selected and visible in read-only views', () => {
+    const locked = ui.renderEditor({ answerDuration: { mode: 'custom', seconds: 35 },
+      questions: [35, 35].map(duration => ({ text: 'Question', options: ['A', 'B'], correctIndex: 0, duration })) }, false, true);
+    expect(locked).toMatch(/<input(?=[^>]*name="answer-duration")(?=[^>]*value="custom")(?=[^>]*checked="")[^>]*>/);
+    expect(locked.match(/class="duration"/g)).toHaveLength(2);
+    expect(locked).not.toContain('id="shared-duration"');
+    expect(locked).toContain('class="author-content" disabled=""');
   });
   it('adjusts selected answer indices when removing an option without changing survey nulls', () => {
     const question = { text: 'Q', options: ['A', 'B', 'C', 'D'], correctIndex: 2, duration: 20 };

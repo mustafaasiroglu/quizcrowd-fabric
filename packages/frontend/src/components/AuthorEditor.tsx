@@ -1,13 +1,13 @@
 import { useRef, useState } from 'react';
 import type { Draft, Question } from '@rayfin-app/shared';
-import { PUBLIC_WARNING } from '@rayfin-app/shared';
+import { getAnswerDuration, PUBLIC_WARNING, setAnswerDuration } from '@rayfin-app/shared';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 
 export const blankQuestion = (duration = 20): Question => ({ text: '', options: ['', '', '', ''], correctIndex: null, duration });
 export const blankDraft = (mode: Draft['mode'] = 'quiz'): Draft => ({
   title: '', mode, visibility: 'internal', publicAcknowledged: false,
-  lateJoin: false, showAnswer: 'wait_all', questions: [blankQuestion()],
+  lateJoin: false, showAnswer: 'wait_all', questions: [blankQuestion()], answerDuration: { mode: 'same', seconds: 20 },
 });
 export function removeOption(question: Question, index: number): Question {
   const correct = question.correctIndex;
@@ -20,22 +20,18 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
 }) {
   const [removing, setRemoving] = useState<number>();
   const questionsRef = useRef<HTMLDivElement>(null);
-  const [timing, setTiming] = useState<{ mode: 'same' | 'custom'; seconds: number }>(() => {
-    const seconds = draft.questions[0]?.duration ?? 20;
-    return { mode: draft.questions.every(q => q.duration === seconds) ? 'same' : 'custom', seconds };
-  });
+  const timing = getAnswerDuration(draft);
   function setDuration(mode: 'same' | 'custom', seconds = timing.seconds) {
-    setTiming({ mode, seconds });
-    if (mode === 'same') onChange({ ...draft, questions: draft.questions.map(q => ({ ...q, duration: seconds })) });
+    onChange(setAnswerDuration(draft, { mode, seconds }));
   }
   function updateQuestion(index: number, patch: Partial<Question>) {
-    onChange({ ...draft, questions: draft.questions.map((q, i) => i === index ? { ...q, ...patch } : q) });
+    onChange({ ...draft, answerDuration: timing, questions: draft.questions.map((q, i) => i === index ? { ...q, ...patch } : q) });
   }
   function move(index: number, direction: -1 | 1) {
     const questions = [...draft.questions], next = index + direction;
     if (next < 0 || next >= questions.length) return;
     [questions[index], questions[next]] = [questions[next]!, questions[index]!];
-    onChange({ ...draft, questions });
+    onChange({ ...draft, answerDuration: timing, questions });
   }
   return <div className="author page-container">
     <div className="section-heading page-heading"><button className="icon-button" aria-label="Go back" onClick={onBack}><Icon name="back" /></button><h1>{readOnly ? 'View' : editing ? 'Edit' : 'New'} Live {draft.mode === 'quiz' ? 'Quiz' : 'Survey'}</h1>{onHost && <button className="primary" disabled={busy} onClick={onHost}><Icon name="play" />Open Lobby</button>}</div>
@@ -64,7 +60,7 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
           {!readOnly && q.options.length < 4 && <button type="button" className="text-button" onClick={() => updateQuestion(i, { options: [...q.options, ''] })}><Icon name="plus" />Add option</button>}
         </fieldset>)}</div>
         {!readOnly && <div className="editor-actions"><button type="button" className="outline-primary" disabled={draft.questions.length >= 40} onClick={() => {
-          onChange({ ...draft, questions: [...draft.questions, blankQuestion(timing.seconds)] });
+          onChange({ ...draft, answerDuration: timing, questions: [...draft.questions, blankQuestion(timing.seconds)] });
           requestAnimationFrame(() => questionsRef.current?.querySelector<HTMLTextAreaElement>('fieldset:last-child textarea')?.focus());
         }}><Icon name="plus" />Add Question</button><button type="submit" className="primary" disabled={draft.visibility === 'public' && (!anonymousEnabled || !draft.publicAcknowledged)}><Icon name="save" />{busy ? 'Saving...' : 'Save & Open Lobby'}</button></div>}
       </fieldset>
@@ -89,6 +85,6 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
         </fieldset>
       </aside>
     </form>
-    {removing !== undefined && !readOnly && <Modal title={`Delete Question ${removing + 1}?`} onClose={() => setRemoving(undefined)}><p className="muted">This action cannot be undone.</p><div className="actions equal-actions"><button onClick={() => setRemoving(undefined)}>Cancel</button><button className="delete-action" onClick={() => { onChange({ ...draft, questions: draft.questions.filter((_, i) => i !== removing) }); setRemoving(undefined); }}>Delete</button></div></Modal>}
+    {removing !== undefined && !readOnly && <Modal title={`Delete Question ${removing + 1}?`} onClose={() => setRemoving(undefined)}><p className="muted">This action cannot be undone.</p><div className="actions equal-actions"><button onClick={() => setRemoving(undefined)}>Cancel</button><button className="delete-action" onClick={() => { onChange({ ...draft, answerDuration: timing, questions: draft.questions.filter((_, i) => i !== removing) }); setRemoving(undefined); }}>Delete</button></div></Modal>}
   </div>;
 }
