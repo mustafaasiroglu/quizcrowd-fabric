@@ -105,6 +105,16 @@ docs/                   Deployment, admin operations, architecture and limitatio
 tests/                  Local regression and authorization tests
 ```
 
+## Original interface, dark and light
+
+The frontend follows the original QuizCrowd layout: centered Join/Host home,
+two-step join, question cards and settings dialog, QR lobby, colorful answers,
+leaderboard and podium. **Dark is the default**; the only alternative is
+**Light**, saved across navigation and reloads. Entra, SQL-backed authoring,
+publisher controls and the Internal/Public security boundary are unchanged.
+See [UI behavior and screenshot review](docs/ui.md) for intentional
+accessibility differences, local browser tests and exact capture paths.
+
 ## Status and limitations
 
 The implementation uses the actual **Rayfin 1.36.2** packages and CLI, with a
@@ -112,15 +122,15 @@ committed npm lockfile. Tests with serialized in-memory *test doubles* are not
 proof of live DAB authorization or SQL locking. The offline deployment bundle
 is approximately 10.3 MB, below the documented 30 MB Function ZIP ceiling.
 
-The current UI authors four response options per question; the server supports
-two to six. Limits are 40 questions, 500 attendees per game, 5–120-second questions,
+The UI authors two to four response options per question and preserves existing
+five/six-option questions; the server supports two to six. Limits are 40 questions, 500 attendees per game, 5–120-second questions,
 and 12-hour attendee credentials. One locked SQL aggregate per game favors
 correctness over high-throughput scale; load-test your capacity before an event.
 Image upload, AI survey generation, automatic retention, moderator tools and
 custom domains are not implemented. See the [full operational limitations](docs/architecture.md#limitations).
 
 The [public CI workflow](https://github.com/mustafaasiroglu/quizcrowd-fabric/actions/workflows/check.yml)
-runs a clean install, all 34 local regression tests, typechecks/build and a full
+runs a clean install, the local regression tests, typechecks/build and a full
 online dependency audit. The validated lockfile reported **0 known
 vulnerabilities**; CI retains a
 high/critical advisory gate. The lockfile uses patched Vite/Vitest plus explicit
@@ -134,6 +144,8 @@ dependencies; the corrected QR/lobby and timed host UI were redeployed and
 retested. Live tests used one real Entra account; foreign-owner and existing-guest
 negative cases used trusted SQL fixtures. Public anonymous execution remains a
 separate, unpassed release gate; see the [observed results](docs/deployment.md#release-gates).
+The subsequent original-style dark/light UI revision was validated locally,
+not redeployed to Fabric.
 
 ## Attribution and distribution
 

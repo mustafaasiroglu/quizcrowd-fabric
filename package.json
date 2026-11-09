@@ -24,6 +24,7 @@
     "pretest": "npm run -w @rayfin-app/shared build && npm run -w @rayfin-app/data build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:ui": "node tests/ui-browser.mjs",
     "check": "npm run typecheck && npm test && npm run build",
     "typecheck": "tsc -b && npm run -w rayfin-functions build",
     "rayfin:up": "rayfin up"

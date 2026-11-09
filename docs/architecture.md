@@ -78,7 +78,8 @@ one-person-one-account: a person may join under multiple nicknames. Do not use
 this product as an exam identity or ballot integrity system.
 
 The browser stores only the attendee credential and game routing ID in tab
-session storage; authoritative game content/progression remains in SQL. Tokens
+session storage; authoritative game content/progression remains in SQL. A separate
+local-storage value, `quizcrowd-theme`, stores only the dark/light preference. Tokens
 are not placed in URLs or returned by preview/state/list/host output. Treat the
 initial join response and tab storage as sensitive. React renders submitted
 text as text; there is no HTML authoring or remote image embedding.
@@ -136,8 +137,8 @@ other creators' private quiz content.
 - **Session recovery:** Tab session storage preserves the attendee credential
   across reloads. A lost guest token cannot be recovered; 12-hour expiry is
   fixed until a signed-in participant rejoins and rotates it.
-- **Authoring scope:** Manual multiple-choice authoring only. Four options in
-  the current UI, two to six validated by the server. No images, open-ended
+- **Authoring scope:** Manual multiple-choice authoring only. Two to four options
+  in the UI, preserving existing five/six-option questions; two to six validated by the server. No images, open-ended
   responses, AI generation, import/export or automatic survey generation.
 - **Trusted publisher:** The app item owner can change code and has external
   SQL permissions. Protect deployment rights; application checks cannot defend
