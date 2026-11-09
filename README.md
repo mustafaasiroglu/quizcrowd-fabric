@@ -19,7 +19,7 @@ publisher-controlled anonymous attendance, and application data persisted in
 
 | Experience | Included |
 | --- | --- |
-| Creator | Forms-inspired quiz/survey cards and editor, edit unstarted sessions without responses, server-enforced read-only view, fresh private duplicate, confirmed owner-only delete |
+| Creator | Compact clickable session cards, branded two-column editor, shared/per-question answer durations, immutable content type, server-enforced read-only view, fresh private duplicate, confirmed owner-only delete |
 | Host | Lobby, QR invite, six-digit numeric game code, start/next controls, timed questions, reveal and leaderboard |
 | Attendee | Entra sign-in by default; optional anonymous guest for public quizzes only; per-tab secret attendee credential |
 | Game | Server-calculated scores (1,000 + up to 500 speed points), streaks, late-join policy, three answer-reveal policies |
@@ -106,13 +106,21 @@ docs/                   Deployment, admin operations, architecture and limitatio
 tests/                  Local regression and authorization tests
 ```
 
-## Forms-inspired authoring, dark and light
+## QuizCrowd authoring, dark and light
 
 Home offers **New Live Quiz**, **New Live Survey** and **Join with Code** above
 recent session cards. The editor places title/questions on the left and settings
 on the right, stacked on mobile. Started sessions or sessions with any submitted
-answer open read-only, including through the server API. Cards distinguish
-participants from individual question responses. A duplicate starts a new private
+answer open read-only, including through the server API. Compact cards omit
+thumbnails and show sentence-case status, an accessible date icon, question count
+and actual question-submission count. Home is the only session-list surface.
+Purple/indigo and pink brand accents replace the previous teal interpretation.
+Content type is fixed by the creation action, including on server updates.
+Answer duration defaults to **Same for all**, set once in the settings panel.
+**Customize per question** exposes a duration at each question. Mode is frontend-only:
+equal question durations reopen as shared, unequal durations as custom. Only the
+existing question durations are saved and used by game timers/scoring. Mixed durations retain
+their values in custom mode. A duplicate starts a new private
 lobby without activity. Six-digit codes preserve leading zeros; existing UUID
 invitations and old codes remain compatible through server-side resolution.
 The original QR lobby, colorful answers, leaderboard and podium remain.

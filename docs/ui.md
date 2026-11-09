@@ -1,30 +1,32 @@
 # QuizCrowd authoring and themes
 
-Home and authoring follow the requested Forms-inspired layout, using original
-QuizCrowd branding rather than Microsoft logos or reference-image personal
-content. The original game screens remain. The original checkout was inspected
+Home and authoring use the requested compact workflow and original QuizCrowd
+purple/indigo and pink brand accents, not the rejected teal/green interpretation.
+There are no thumbnails or separate Your Quizzes page. The original game
+screens remain. The original checkout was inspected
 read-only, not built, executed or modified.
 
 ## Screens
 
 | Screen | Behavior |
 | --- | --- |
-| Home | New Live Quiz / New Live Survey / Join with Code actions, recent-session card grid; stacked on mobile |
+| Home | Icon-led New Live Quiz / New Live Survey / Join with Code actions, the only recent-session grid; stacked on mobile |
 | Join | Narrow card, six-digit numeric string code including leading zeros, separate nickname step; old links resolve; no pre-join preview action |
-| Author | Wide title/questions column with white Light surfaces or dark teal Dark surfaces, compact question cards, correctness controls, options, timer and reordering |
-| Settings | Right sidebar on desktop, stacked on mobile; content type, audience, late joins and answer reveal |
+| Author | Wide title/questions column with white Light surfaces or dark indigo surfaces; compact question cards, correctness controls, options and reordering |
+| Settings | Right sidebar on desktop, stacked on mobile; Who can respond? first, then answer duration, late joins and answer reveal; no Content Type label/control |
 | Host lobby | 448px card, prominent session code, copy code/link, white QR panel, joined-player chips and start action |
 | Attendee | Waiting card, full-width timer, colored answer choices, submitted-answer state and server-projected reveal |
 | Host question/results | Centered question card, colored options, timer/answer count, reveal, leaderboard and next/final controls |
 | Finish | Three-step podium in second / first / third order, remaining rankings and replay/home action |
-| Library | Type/title/status/created-on, actual participant count and submitted-answer count; native three-dot Open / Duplicate / Delete disclosure |
+| Recent cards | Compact keyboard-accessible clickable content, no thumbnail, type/title/sentence-case status/date icon/Questions/Responses; separate native three-dot Open / Duplicate / Delete disclosure |
 | Publisher | Trusted administrator-only guest setting; no bootstrap-identity diagnostic in user UI |
 
 Dark uses the source palette: `#1a1a2e`, `#16213e`, `#0f3460`,
 `#2d1b69`, primary `#6c63ff`, secondary `#ff6584` and accent `#43e97b`.
 Game screens retain the original animated background, falling geometric shapes,
-card geometry and mobile option stacking. Home/editor use teal accents and
-Forms-inspired surfaces with Segoe UI typography.
+card geometry and mobile option stacking. Home/editor use purple and pink
+accents with Segoe UI typography. Their status badges, authoring correctness
+selection and controls use no green; the game correctness semantics stay unchanged.
 Reduced-motion preferences disable animations and transitions.
 
 The light theme uses the same geometry, hierarchy and interactions, with pale
@@ -53,12 +55,31 @@ requires explicit confirmation and owner authorization. An unanswered, unstarted
 lobby remains editable even with attendees. Response count means individual
 question submissions, not the number of people.
 
-New Live Survey preselects Survey. Content Type is changeable before the edit
-lock; switching to Survey clears keys and disables Show Correct Answers. This
-interprets the requested incomplete "Disabled for" label as "Disabled for surveys".
+New Live Survey creates a Survey; New Live Quiz creates a Quiz. Content Type is
+fixed by the creation action and not shown in Settings; API updates reject type changes and
+duplicate preserves the source type. Show Correct Answers stays disabled for surveys.
 The organization audience requires tenant-bound Entra app access and includes
 authorized directory guests, not anonymous app guests. Public selection still
 requires the global switch, warning acknowledgement and deployment release gate.
+
+## Answer duration
+
+New content defaults to **Same for all**, 20 seconds. Only the settings panel
+shows the duration input in this mode; questions have no timer controls.
+**Customize per question** shows a duration at the top of every question and
+removes the shared input. Values must be whole seconds from 5 through 120.
+Changing to custom initializes questions with the current shared value.
+Changing back uses the remembered shared value, or the first question's value
+for legacy custom content, deterministically. New questions inherit that value.
+Removal/reordering does not lose the setting.
+
+Mode is frontend-only and is never saved or sent to the API. Opening an editor
+with equal question times selects shared mode; unequal times select custom,
+including existing content. Only the existing per-question duration values
+persist and survive reopen/duplicate. Equal saved values reopen as shared even
+if custom was selected before saving. There is no new DB field or migration.
+The existing server duration validation and edit lock protect the real times.
+This does not remove live countdowns or change survey timed-collection semantics.
 
 ## Exactly two themes
 
@@ -116,38 +137,40 @@ legacy invitation resolution, native menu keyboard handling, duplicate, delete
 confirmation/cancellation and publisher visibility, alongside existing game flows.
 
 Real browser captures and the report are saved under the ignored directory
-`rayfin\.temp\ui-review\`. They use synthetic test content:
+`rayfin\.temp\compact-review\`. They use synthetic test content:
 
 | Image suffix | Example exact repository-relative path |
 | --- | --- |
-| Home | `rayfin\.temp\ui-review\dark-desktop-home.png` |
-| Join | `rayfin\.temp\ui-review\light-mobile-join.png` |
-| Editor | `rayfin\.temp\ui-review\dark-desktop-author.png` |
-| Settings | `rayfin\.temp\ui-review\light-mobile-settings.png` |
-| QR lobby | `rayfin\.temp\ui-review\light-mobile-host-lobby.png` |
-| Host question | `rayfin\.temp\ui-review\dark-desktop-host-question.png` |
-| Reveal | `rayfin\.temp\ui-review\light-desktop-host-reveal.png` |
-| Leaderboard | `rayfin\.temp\ui-review\dark-mobile-host-leaderboard.png` |
-| Podium | `rayfin\.temp\ui-review\dark-mobile-host-finished.png` |
-| Attendee waiting | `rayfin\.temp\ui-review\light-desktop-attendee-lobby.png` |
-| Attendee question | `rayfin\.temp\ui-review\dark-mobile-attendee-question.png` |
-| Submitted answer | `rayfin\.temp\ui-review\light-mobile-attendee-submitted.png` |
-| Library | `rayfin\.temp\ui-review\dark-desktop-library.png` |
-| Read-only | `rayfin\.temp\ui-review\light-desktop-readonly.png` |
-| Three-dot menu | `rayfin\.temp\ui-review\dark-mobile-menu.png` |
-| Delete-question dialog | `rayfin\.temp\ui-review\light-mobile-delete-dialog.png` |
-| Publisher | `rayfin\.temp\ui-review\light-mobile-publisher.png` |
-| Survey completion | `rayfin\.temp\ui-review\light-mobile-survey-finished.png` |
-| Public warning | `rayfin\.temp\ui-review\light-mobile-public-warning.png` |
-| Full machine-readable results | `rayfin\.temp\ui-review\results.json` |
+| Home | `rayfin\.temp\compact-review\dark-desktop-home.png` |
+| Join | `rayfin\.temp\compact-review\light-mobile-join.png` |
+| Editor | `rayfin\.temp\compact-review\dark-desktop-author.png` |
+| Same for all | `rayfin\.temp\compact-review\dark-desktop-settings.png` |
+| Custom durations | `rayfin\.temp\compact-review\light-mobile-custom-duration.png` |
+| Equal durations reopened | `rayfin\.temp\compact-review\dark-desktop-uniform-reopen.png` |
+| QR lobby | `rayfin\.temp\compact-review\light-mobile-host-lobby.png` |
+| Host question | `rayfin\.temp\compact-review\dark-desktop-host-question.png` |
+| Reveal | `rayfin\.temp\compact-review\light-desktop-host-reveal.png` |
+| Leaderboard | `rayfin\.temp\compact-review\dark-mobile-host-leaderboard.png` |
+| Podium | `rayfin\.temp\compact-review\dark-mobile-host-finished.png` |
+| Attendee waiting | `rayfin\.temp\compact-review\light-desktop-attendee-lobby.png` |
+| Attendee question | `rayfin\.temp\compact-review\dark-mobile-attendee-question.png` |
+| Submitted answer | `rayfin\.temp\compact-review\light-mobile-attendee-submitted.png` |
+| Recent cards | `rayfin\.temp\compact-review\dark-desktop-recent.png` |
+| Read-only | `rayfin\.temp\compact-review\light-desktop-readonly.png` |
+| Three-dot menu | `rayfin\.temp\compact-review\dark-mobile-menu.png` |
+| Delete-question dialog | `rayfin\.temp\compact-review\light-mobile-delete-dialog.png` |
+| Publisher | `rayfin\.temp\compact-review\light-mobile-publisher.png` |
+| Survey completion | `rayfin\.temp\compact-review\light-mobile-survey-finished.png` |
+| Public warning | `rayfin\.temp\compact-review\light-mobile-public-warning.png` |
+| Full machine-readable results | `rayfin\.temp\compact-review\results.json` |
 
 The common capture suffixes exist for every dark/light and
 desktop/mobile combination. The report lists every exact path. Screenshot
 review and source-derived layout assertions do not establish pixel-perfect
 equivalence against a running original app: the original was not executed.
 
-This revision requires the additive SQL migration and updated Functions as well
-as frontend publication. It does not change tenant policy, hosting protection,
+This revision requires updated Functions and frontend publication, but no
+additional SQL schema migration. It does not change tenant policy, hosting protection,
 the guest switch or trusted administrator membership. Function signatures remain
 unchanged. Deployment success and SQL readback are distinct from an authenticated
 live browser smoke test; local fixture screenshots do not prove the latter.

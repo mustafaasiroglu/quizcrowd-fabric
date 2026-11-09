@@ -53,6 +53,7 @@ export interface QuizSummary {
   mode: Draft['mode'];
   createdAt: number;
   participantCount: number;
+  questionCount: number;
   responseCount: number;
   readOnly: boolean;
 }

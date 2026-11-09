@@ -239,7 +239,7 @@ INSERT INTO quizcrowd.Administrators (Subject)
 VALUES (N'<verified-app-caller-subject>');
 ```
 
-Refresh the library. **Publisher controls** now appears. Revoking the row removes
+Refresh home. **Publisher controls** now appears. Revoking the row removes
 admin authority on the next request. There is no user-editable profile role,
 password, URL parameter, email-domain check or client flag that grants admin.
 
@@ -379,6 +379,21 @@ hand-edit it. Updates to existing deployments use a reviewed pull/merge of your
 template copy, `npm ci`, `npm run check`, reviewed SQL migrations if needed, and
 full `npx rayfin up`. Never use schema `--force` without a separate destructive
 migration review. Observe the documented Functions publishing cooldown.
+
+### Updating existing quizzes to shared/custom durations
+
+Answer-duration mode is frontend-only, inferred from existing question durations
+whenever the editor opens. Equal durations select **Same for all**; mixed
+durations select **Customize per question**. No new DB field, saved mode,
+schema migration or existing-game rewrite is required. Only the existing
+per-question duration values persist. Duplicate preserves those values, while
+started/responded content stays read-only. Deploy updated Functions before the
+frontend for the separate question-count and content-type changes. Content type is now
+immutable after creation, including direct API updates.
+
+Keep the existing `AnonymousEnabled`, `GuestEpoch`, administrator assignments and
+hosting/runtime configuration unchanged. Do not rerun the six-digit-code
+migration just to update the duration/editor UI.
 
 ### Dependency maintenance
 

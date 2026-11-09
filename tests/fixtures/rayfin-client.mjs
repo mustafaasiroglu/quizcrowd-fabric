@@ -45,7 +45,7 @@ window.__quizcrowdFixture = {
 };
 function summary() {
   return { id: 'test-session', code: currentCode, title: currentDraft.title, phase, visibility: currentDraft.visibility,
-    mode: currentDraft.mode, createdAt: 1794214800000, participantCount: players.length,
+    mode: currentDraft.mode, createdAt: 1794214800000, participantCount: players.length, questionCount: currentDraft.questions.length,
     responseCount: myOption === undefined ? 0 : 1, readOnly: phase !== 'lobby' || myOption !== undefined };
 }
 const connection = {

@@ -95,7 +95,7 @@ export const readOnly = (game: Game): boolean => game.phase !== 'lobby' || game.
 export function summary(game: Game): QuizSummary {
   const { id, code, title, mode, phase, visibility, createdAt } = game;
   return { id, code, title, mode, phase, visibility, createdAt,
-    participantCount: game.participants.length, responseCount: game.answers.length, readOnly: readOnly(game) };
+    participantCount: game.participants.length, questionCount: game.questions.length, responseCount: game.answers.length, readOnly: readOnly(game) };
 }
 export function authorDraft(game: Game): Draft {
   const { title, mode, visibility, publicAcknowledged, lateJoin, showAnswer, questions } = game;

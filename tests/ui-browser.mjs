@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { startPreview } from './ui-preview.mjs';
 
 const edge = process.env.QUIZCROWD_TEST_BROWSER ?? 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const directory = resolve('rayfin', '.temp', 'ui-review');
+const directory = resolve('rayfin', '.temp', 'compact-review');
 const profile = resolve('rayfin', '.temp', 'edge-ui-review');
 const report = { kind: 'Local real-browser UI tests with test-only connection fixtures; not live Fabric authorization', checks: [], screenshots: [], contrast: [] };
 let browser, cdp, server;
@@ -85,7 +85,7 @@ async function screenshot(name) {
   await evaluate('window.scrollTo(0,0)');
   const modal = await evaluate('!!document.querySelector("dialog[open]")');
   const shot = await cdp.call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: !modal }, session);
-  const relative = join('rayfin', '.temp', 'ui-review', `${name}.png`);
+  const relative = join('rayfin', '.temp', 'compact-review', `${name}.png`);
   await writeFile(relative, Buffer.from(shot.data, 'base64'));
   report.screenshots.push(relative);
 }
@@ -178,6 +178,13 @@ try {
         assert.equal(await evaluate('document.documentElement.dataset.theme'), theme);
         assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions button")].map(e=>e.textContent.trim())'), ['New Live Quiz','New Live Survey','Join with Code']);
         assert.equal(await evaluate('document.body.textContent.includes("Publisher bootstrap identity")'), false);
+        assert.equal(await evaluate('document.body.textContent.includes("Your Quizzes")'), false);
+        assert.equal(await evaluate('document.querySelector(".session-cover") === null'), true);
+        assert.equal(await evaluate('document.querySelector(".session-card").getBoundingClientRect().height < 300'), true);
+        assert.equal(await evaluate('document.querySelector(".session-metrics").textContent'), '2 Questions0 Responses');
+        assert.equal(await evaluate('document.querySelector(".session-metrics").textContent.includes("participants")'), false);
+        assert.equal(await evaluate('document.querySelector(".session-date time").dateTime'), '2026-11-09T09:00:00.000Z');
+        assert.equal(await evaluate('document.querySelectorAll(".home-actions button > svg").length'), 3);
         await inspectScreen(`${label}-home`);
         const { root } = await cdp.call('DOM.getDocument', {}, session);
         const { nodeId } = await cdp.call('DOM.querySelector', { nodeId: root.nodeId, selector: '.home-actions .primary' }, session);
@@ -187,6 +194,15 @@ try {
         }
         await cdp.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] }, session);
         await screenshot(`${label}-home`);
+      });
+      await check(`${label}: legacy custom durations and clickable card keyboard access`, async () => {
+        await evaluate('document.querySelector(".session-open").focus()');
+        await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', text: '\r', windowsVirtualKeyCode: 13 }, session);
+        await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, session);
+        await until('!!document.querySelector(".author")');
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".question-heading .duration input")].map(e=>Number(e.value))'), [60,30]);
+        assert.equal(await evaluate('document.querySelector(\'input[name="answer-duration"][value="custom"]\').checked'), true);
+        await pointerClick('document.querySelector(\'[aria-label="Go back"]\')');
       });
       await check(`${label}: join without question preview and Entra attendee submission`, async () => {
         await click('Join with Code');
@@ -217,13 +233,29 @@ try {
         for (const [i, option] of ['Fabric SQL', 'Browser storage', 'A shared file', 'In memory'].entries()) await input(`#option-0-${i}`, option);
         assert.equal(await evaluate('document.querySelector("form").checkValidity()'), false);
         await pointerClick('document.querySelector(\'[aria-label="Question 1, correct option 1"]\')');
+        assert.equal(await evaluate('document.querySelector(".settings-panel").textContent.includes("Content Type")'), false);
+        assert.equal(await evaluate('document.querySelector(".settings-panel > fieldset > fieldset:first-of-type").classList.contains("audience-settings")'), true);
+        assert.equal(await evaluate('document.querySelector(".audience-settings legend").textContent'), 'Who can respond?');
+        assert.equal(await evaluate('document.querySelectorAll(".question-heading .duration").length'), 0);
+        await input('#shared-duration', '35');
         assert.equal(await evaluate('document.querySelector(".settings-panel").getBoundingClientRect().left > document.querySelector(".author-content").getBoundingClientRect().left'), size === 'desktop');
         await inspectScreen(`${label}-settings`);
         await screenshot(`${label}-settings`);
-        await click('+ Add Question');
+        await click('Add Question');
         await input('#question-1', 'Ready for another round?');
         for (const [i, option] of ['Yes', 'Absolutely', 'One more', 'Ready'].entries()) await input(`#option-1-${i}`, option);
         await pointerClick('document.querySelector(\'[aria-label="Question 2, correct option 1"]\')');
+        await pointerClick('document.querySelector(\'input[name="answer-duration"][value="custom"]\')');
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".question-heading .duration input")].map(e=>Number(e.value))'), [35,35]);
+        assert.equal(await evaluate('document.querySelector("#shared-duration")===null'), true);
+        await input('.question-editor:last-child .duration input', '50');
+        await inspectScreen(`${label}-custom-duration`); await screenshot(`${label}-custom-duration`);
+        await pointerClick('document.querySelector(\'input[name="answer-duration"][value="same"]\')');
+        assert.equal(await evaluate('document.querySelectorAll(".question-heading .duration").length'), 0);
+        assert.equal(await evaluate('document.querySelector("#shared-duration").value'), '35');
+        await pointerClick('document.querySelector(\'input[name="answer-duration"][value="custom"]\')');
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".question-heading .duration input")].map(e=>Number(e.value))'), [35,35]);
+        await input('.question-editor:last-child .duration input', '50');
         await pointerClick('document.querySelector(\'[aria-label="Remove question 2"]\')');
         await until('document.querySelector("dialog")?.open');
         for (let i = 0; i < 7; i++) {
@@ -241,6 +273,9 @@ try {
         await evaluate('document.querySelector(\'[aria-label="Move question 1 down"]\').click()');
         await inspectScreen(`${label}-author`); await screenshot(`${label}-author`);
         await click('Save & Open Lobby'); await until('!!document.querySelector(".host-lobby")');
+        const saved = await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="create").draft');
+        assert.equal(Object.hasOwn(saved, 'answerDuration'), false);
+        assert.deepEqual(saved.questions.map(q=>q.duration), [35,50]);
       });
       await check(`${label}: host QR, timer, reveal, leaderboard and podium`, async () => {
         assert.equal(await evaluate('document.querySelectorAll(".qr-container svg").length'), 1);
@@ -259,15 +294,17 @@ try {
         await click('Back to Home');
       });
       await check(`${label}: SQL-library presentation, publisher controls, reload persistence`, async () => {
-        await click('Your Quizzes'); await inspectScreen(`${label}-library`); await screenshot(`${label}-library`);
-        await click('View'); await until('!!document.querySelector(".readonly-notice")');
+        await inspectScreen(`${label}-recent`); await screenshot(`${label}-recent`);
+        assert.equal(await evaluate('document.querySelector(".session-card .badge").textContent'), 'Finished');
+        await pointerClick('document.querySelector(".session-open")'); await until('!!document.querySelector(".readonly-notice")');
         assert.equal(await evaluate('document.querySelector(".author-content").disabled'), true);
         assert.equal(await evaluate('document.querySelector(".author button[type=submit]") === null'), true);
         assert.equal(await evaluate('[...document.querySelectorAll("button")].some(e=>e.textContent==="Open Lobby")'), true);
         await inspectScreen(`${label}-readonly`); await screenshot(`${label}-readonly`);
-        await click('Your Quizzes');
+        await pointerClick('document.querySelector(\'[aria-label="Go back"]\')');
         await pointerClick('document.querySelector(".session-menu summary")');
         assert.equal(await evaluate('document.querySelector(".session-menu").open'), true);
+        assert.equal(await evaluate('document.querySelector(".author")===null'), true);
         await inspectScreen(`${label}-menu`); await screenshot(`${label}-menu`);
         await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, session);
         await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, session);
@@ -279,8 +316,22 @@ try {
         await click('Duplicate'); await until('!!document.querySelector(".author-content:not(:disabled)")');
         assert.equal(await evaluate('document.querySelector(".readonly-notice")===null'), true);
         assert.ok(await evaluate('window.__quizcrowdFixture.requests.some(r=>r.command==="duplicate")'));
-        await click('Your Quizzes'); await until('!!document.querySelector(".session-menu")');
-        assert.equal(await evaluate('document.querySelector(".session-metrics").textContent'), '0 participants0 responses');
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".question-heading .duration input")].map(e=>Number(e.value))'), [35,50]);
+        await pointerClick('document.querySelector(\'input[name="answer-duration"][value="same"]\')');
+        await pointerClick('document.querySelector(\'input[name="answer-duration"][value="custom"]\')');
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".question-heading .duration input")].map(e=>Number(e.value))'), [35,35]);
+        await click('Save & Open Lobby'); await until('!!document.querySelector(".host-lobby")');
+        const updated = await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="edit" && r.draft).draft');
+        assert.equal(Object.hasOwn(updated, 'answerDuration'), false);
+        assert.deepEqual(updated.questions.map(q=>q.duration), [35,35]);
+        await pointerClick('document.querySelector(".small-brand")'); await until('!!document.querySelector(".session-open")');
+        await pointerClick('document.querySelector(".session-open")'); await until('!!document.querySelector(".author")');
+        assert.equal(await evaluate('document.querySelector(\'input[name="answer-duration"][value="same"]\').checked'), true);
+        assert.equal(await evaluate('document.querySelector("#shared-duration").value'), '35');
+        assert.equal(await evaluate('document.querySelectorAll(".question-heading .duration").length'), 0);
+        await inspectScreen(`${label}-uniform-reopen`); await screenshot(`${label}-uniform-reopen`);
+        await pointerClick('document.querySelector(\'[aria-label="Go back"]\')'); await until('!!document.querySelector(".session-menu")');
+        assert.equal(await evaluate('document.querySelector(".session-metrics").textContent'), '2 Questions0 Responses');
         await pointerClick('document.querySelector(".session-menu summary")'); await clickWithConfirmation('Delete', false);
         assert.equal(await evaluate('document.querySelectorAll(".session-card").length'), 1);
         await pointerClick('document.querySelector(".session-menu summary")'); await clickWithConfirmation('Delete', true);
@@ -336,6 +387,8 @@ try {
     await cdp.call('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: false }, session);
     await navigate('?fixture=admin'); await inspectScreen('light-320-home');
     assert.equal(await evaluate('getComputedStyle(document.body).animationName'), 'none');
+    assert.equal(await evaluate('!!document.querySelector(".shapes-wrapper")'), false);
+    await navigate('?fixture=admin&quiz=test-session');
     assert.equal(await evaluate('getComputedStyle(document.querySelector(".shapes-wrapper span")).animationName'), 'none');
   });
   await check('explicit theme selection is keyboard-operable without a system mode', async () => {

@@ -1,7 +1,7 @@
 import sql from 'mssql';
 import { describe, expect, it, vi } from 'vitest';
 import { execute } from '../rayfin/functions/src/service';
-import { createGame, type Game } from '../rayfin/functions/src/domain';
+import { authorDraft, createGame, draftSchema } from '../rayfin/functions/src/domain';
 import { isJoinCodeCollision, retryJoinCode, type Store, type UnitOfWork } from '../rayfin/functions/src/sql-store';
 
 const random = vi.hoisted(() => ({ value: 7 }));
@@ -31,6 +31,76 @@ function fixture() {
   return { store, legacy, games: () => games, game: () => games[0] };
 }
 describe('six-digit codes and owner authoring transactions (test store)', () => {
+  it('rejects quiz/survey type mutation and duplicates the original type', async () => {
+    const f = fixture();
+    const survey = { ...draft, mode: 'survey', questions: draft.questions.map(q => ({ ...q, correctIndex: null })) };
+    await expect(execute(f.store, { command: 'edit', id: f.game().id, draft: survey }, 'owner', '')).rejects.toThrow('Content type cannot be changed');
+    expect(f.game().mode).toBe('quiz');
+    const copy = await execute(f.store, { command: 'duplicate', id: f.game().id }, 'owner', '') as { id: string };
+    expect(f.games().find(g => g.id === copy.id)?.mode).toBe('quiz');
+    const created = await execute(f.store, { command: 'create', draft: survey }, 'owner', '') as { id: string };
+    await expect(execute(f.store, { command: 'edit', id: created.id, draft }, 'owner', '')).rejects.toThrow('Content type cannot be changed');
+  });
+  it('preserves actual question durations through save, reopen and duplicate without mode metadata', async () => {
+    const f = fixture();
+    const same = { ...authorDraft(f.game()), questions: f.game().questions.map(q => ({ ...q, duration: 35 })) };
+    await execute(f.store, { command: 'edit', id: f.game().id, draft: same }, 'owner', '');
+    expect(f.game().questions.map(q => q.duration)).toEqual([35]);
+    expect(await execute(f.store, { command: 'edit', id: f.game().id }, 'owner', '')).toMatchObject({ draft: { questions: [{ duration: 35 }] } });
+    const custom = { ...same, questions: [...same.questions, { ...same.questions[0], text: 'Second', duration: 50 }] };
+    await execute(f.store, { command: 'edit', id: f.game().id, draft: custom }, 'owner', '');
+    const copy = await execute(f.store, { command: 'duplicate', id: f.game().id }, 'owner', '') as { id: string };
+    expect(f.games().find(g => g.id === copy.id)).toMatchObject({ questions: [{ duration: 35 }, { duration: 50 }] });
+    for (const game of f.games()) expect(game).not.toHaveProperty('answerDuration');
+    expect(f.game().questions.map(q => q.duration)).toEqual([35, 50]);
+    f.game().phase = 'question';
+    await expect(execute(f.store, { command: 'edit', id: f.game().id, draft: same }, 'owner', '')).rejects.toThrow('read-only');
+    expect(f.game().questions.map(q => q.duration)).toEqual([35, 50]);
+  });
+  it('returns existing mixed durations unchanged without rewriting stored content on read', async () => {
+    const f = fixture();
+    f.game().questions.push({ ...f.game().questions[0], duration: 50 });
+    const before = structuredClone(f.game());
+    expect(await execute(f.store, { command: 'edit', id: f.game().id }, 'owner', '')).toMatchObject({ draft: { questions: [{ duration: 20 }, { duration: 50 }] } });
+    expect(f.game()).toEqual(before);
+    const copy = await execute(f.store, { command: 'duplicate', id: f.game().id }, 'owner', '') as { id: string };
+    expect(f.games().find(g => g.id === copy.id)?.questions.map(q => q.duration)).toEqual([20, 50]);
+  });
+  it('validates real question durations and rejects unnecessary duration-mode metadata', () => {
+    expect(createGame(draft, 'owner', settings, 1000)).not.toHaveProperty('answerDuration');
+    for (const seconds of [0, 4, 121, 20.5, '20']) {
+      expect(draftSchema.safeParse({ ...draft, questions: draft.questions.map(q => ({ ...q, duration: seconds })) }).success).toBe(false);
+    }
+    expect(draftSchema.safeParse({ ...draft, answerDuration: { mode: 'same', seconds: 30 } }).success).toBe(false);
+    expect(draftSchema.safeParse({ ...draft, answerDuration: { mode: 'custom', seconds: 30 } }).success).toBe(false);
+    expect(draftSchema.safeParse({ ...draft, questions: [5, 120].map(duration => ({ ...draft.questions[0], duration })) }).success).toBe(true);
+  });
+  it('uses the saved question duration for real scoring', async () => {
+    const f = fixture();
+    const same = { ...authorDraft(f.game()), questions: f.game().questions.map(q => ({ ...q, duration: 40 })) };
+    await execute(f.store, { command: 'edit', id: f.game().id, draft: same }, 'owner', '');
+    const ticket = await execute(f.store, { command: 'join', id: f.game().id, nickname: 'A' }, 'a', '', 1000) as { token: string };
+    await execute(f.store, { command: 'control', id: f.game().id, action: 'start', version: f.game().version }, 'owner', '', 2000);
+    await execute(f.store, { command: 'answer', id: f.game().id, questionIndex: 0, option: 0 }, 'a', ticket.token, 22000);
+    expect(f.game().answers[0].points).toBe(1250);
+  });
+  it.each(['quiz', 'survey'] as const)('uses per-question custom timeouts for %s without changing timed live semantics', async (mode) => {
+    const f = fixture();
+    const custom = { ...authorDraft(f.game()),
+      questions: [35, 50].map((duration, i) => ({ ...f.game().questions[0], text: `Question ${i}`, duration })) };
+    if (mode === 'survey') {
+      f.game().mode = 'survey'; custom.mode = 'survey'; custom.questions.forEach(q => { q.correctIndex = null; });
+    }
+    await execute(f.store, { command: 'edit', id: f.game().id, draft: custom }, 'owner', '');
+    const ticket = await execute(f.store, { command: 'join', id: f.game().id, nickname: 'A' }, 'a', '', 1000) as { token: string };
+    await execute(f.store, { command: 'control', id: f.game().id, action: 'start', version: f.game().version }, 'owner', '', 2000);
+    expect(await execute(f.store, { command: 'state', id: f.game().id }, 'a', ticket.token, 36999)).toMatchObject({ phase: 'question', question: { duration: 35 } });
+    expect(await execute(f.store, { command: 'state', id: f.game().id }, 'a', ticket.token, 37000)).toMatchObject({ phase: 'reveal' });
+    await execute(f.store, { command: 'host', id: f.game().id }, 'owner', '', 42000);
+    await execute(f.store, { command: 'control', id: f.game().id, action: 'next', version: f.game().version }, 'owner', '', 42001);
+    expect(await execute(f.store, { command: 'state', id: f.game().id }, 'a', ticket.token, 92000)).toMatchObject({ phase: 'question', question: { duration: 50 } });
+    expect(await execute(f.store, { command: 'state', id: f.game().id }, 'a', ticket.token, 92001)).toMatchObject({ phase: 'reveal' });
+  });
   it('creates numeric string codes with leading zeros and keeps IDs private routing identifiers', async () => {
     random.value = 7;
     const f = fixture();
@@ -48,7 +118,7 @@ describe('six-digit codes and owner authoring transactions (test store)', () => 
     const f = fixture(); f.game().participants.push({ id: 'p', nickname: 'P', subject: 'a', tokenHash: 'secret', expiresAt: 9999, guestEpoch: 0, score: 0, streak: 0 });
     f.game().answers.push({ participantId: 'p', questionIndex: 0, option: 0, correct: true, points: 2 }, { participantId: 'p', questionIndex: 1, option: 0, correct: true, points: 2 });
     const result = await execute(f.store, { command: 'list' }, 'owner', '');
-    expect(result).toMatchObject([{ mode: 'quiz', createdAt: 1000, participantCount: 1, responseCount: 2, readOnly: true }]);
+    expect(result).toMatchObject([{ mode: 'quiz', createdAt: 1000, participantCount: 1, questionCount: 1, responseCount: 2, readOnly: true }]);
     for (const secret of ['correctIndex', 'tokenHash', 'participantId', 'owner']) expect(JSON.stringify(result)).not.toContain(secret);
     expect(await execute(f.store, { command: 'list' }, 'stranger', '')).toEqual([]);
   });

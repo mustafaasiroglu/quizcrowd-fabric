@@ -50,8 +50,10 @@ the entire creation transaction, regenerating the code (six attempts maximum);
 other failures are not swallowed or retried. `002-six-digit-codes.sql` preserves
 old ten-character codes in a unique `LegacyCode` alias and changes only the
 canonical code and its JSON projection. Existing UUID links still resolve.
-Owner library summaries contain actual participant/answer-ledger counts, mode,
-creation time, status and edit lock, not the aggregate or answer keys.
+Owner session summaries contain actual question, participant and answer-ledger
+counts, mode, creation time, status and edit lock, not the aggregate or answer
+keys. The home cards display Questions/Responses; participant count remains
+available to the owner projection but is not a card metric.
 
 Every command opens its own SQL connection pool and **SERIALIZABLE**
 transaction. It reads Settings with a held shared lock, then loads the game with
@@ -129,6 +131,22 @@ copies content/settings into a new owner-owned private lobby with a fresh ID/cod
 and no participants, responses, progression or scores. Delete remains
 owner-authorized, with frontend confirmation. Global administration does not implicitly grant ownership of
 other creators' private quiz content.
+
+Content type is immutable after creation, even in an empty lobby. The server
+rejects quiz/survey type mutations; duplicate preserves the source type.
+Answer-duration mode is frontend-only state. On opening the editor, equal
+question durations select **Same for all**; unequal durations select **Customize
+per question**. No mode or separate shared-duration field is stored or sent to
+the API. Only the existing `Question.duration` values persist and drive runtime
+timeouts and speed scoring. The unchanged server validation requires integer
+durations from 5 through 120 seconds. No SQL schema/data migration is needed.
+
+Changing shared to custom retains the current effective duration in each
+question. Changing back applies the shared seconds remembered in that editor
+session, initially the first question's value. New questions inherit that
+value; removing/reordering questions preserves their real durations. Reopening
+always recomputes the mode from question values, even if custom was selected
+when equal values were saved. The started/response edit lock protects timing.
 
 The organization-only audience uses the platform's tenant-bound Entra app
 authentication and Execute permissions, then the existing verified caller boundary.

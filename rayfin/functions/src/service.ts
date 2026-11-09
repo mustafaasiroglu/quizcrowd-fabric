@@ -79,6 +79,7 @@ export async function execute(
         own(game, subject);
         if (!input.draft) return { ...summary(game), draft: authorDraft(game) };
         if (readOnly(game)) throw new Conflict('Started sessions and sessions with responses are read-only. Duplicate this session to edit a new copy.');
+        if (input.draft.mode !== game.mode) throw new Conflict('Content type cannot be changed. Create a new quiz or survey instead.');
         visibilityAllowed(input.draft, settings);
         Object.assign(game, input.draft);
         game.version++;

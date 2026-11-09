@@ -116,7 +116,15 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     const editable = ui.renderEditor();
     expect(editable).toContain('author-layout');
     expect(editable).toContain('settings-panel');
-    expect(editable).toContain('Content Type');
+    expect(editable).not.toContain('Content Type');
+    expect(editable.indexOf('Who can respond?')).toBeLessThan(editable.indexOf('Answer duration'));
+    expect(editable).not.toContain('value="quiz"');
+    expect(editable).toContain('Same for all');
+    expect(editable).toContain('id="shared-duration"');
+    expect(editable).not.toContain('class="duration"');
+    const custom = ui.renderEditor({ questions: [20, 35].map(duration => ({ text: 'Question', options: ['A', 'B'], correctIndex: 0, duration })) });
+    expect(custom).toContain('class="duration"');
+    expect(custom).not.toContain('id="shared-duration"');
     const locked = ui.renderEditor({}, false, true);
     expect(locked).toContain('Read-only:');
     expect(locked).toContain('class="author-content" disabled=""');

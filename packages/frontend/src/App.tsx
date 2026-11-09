@@ -9,7 +9,7 @@ import { ThemeSwitch } from './components/ThemeSwitch';
 import { SessionLibrary } from './components/SessionLibrary';
 
 type Ticket = { id: string; token: string; guest: boolean };
-type Page = 'home' | 'join' | 'library' | 'admin' | 'author' | 'game';
+type Page = 'home' | 'join' | 'admin' | 'author' | 'game';
 const TICKET_KEY = 'quizcrowd-attendee-credential';
 const queryCode = new URLSearchParams(location.search).get('quiz') ?? new URLSearchParams(location.search).get('code') ?? '';
 
@@ -144,7 +144,14 @@ export default function App() {
     setTicket(undefined); setGame(undefined); setHostId(undefined); setError(''); setPage('home');
     if (connection) void run(() => refresh());
   }
-  function create(mode: Draft['mode']) { setDraft(blankDraft(mode)); setReadOnly(false); setEditing(undefined); setPage(signedIn ? 'author' : 'library'); }
+  function create(mode: Draft['mode']) {
+    setDraft(blankDraft(mode)); setReadOnly(false); setEditing(undefined);
+    if (signedIn) setPage('author');
+    else if (connection) {
+      const result = connection.signIn();
+      void run(async () => { setSession(await result); setPage('author'); });
+    }
+  }
   function host(id: string) { setHostId(id); setTicket(undefined); setGame(undefined); setPage('game'); }
   const joinUrl = game ? `${location.origin}${location.pathname}?code=${game.code}` : '';
   const seconds = game?.question && game.questionStartedAt
@@ -155,18 +162,17 @@ export default function App() {
     onDelete={(id) => void run(async () => { if (window.confirm('Delete this session and all participant responses permanently?')) { await call(connection!, { command: 'delete', id }); await refresh(); } })} />;
 
   return <>
-    <div className="shapes-wrapper" aria-hidden="true">{Array.from({ length: 12 }, (_, i) => <span key={i} />)}</div>
+    {page !== 'home' && page !== 'author' && <div className="shapes-wrapper" aria-hidden="true">{Array.from({ length: 12 }, (_, i) => <span key={i} />)}</div>}
     <a className="skip-link" href="#content">Skip to content</a>
     <header className="app-toolbar">
       <button className="brand small-brand" onClick={home}><span>Quiz</span><span>Crowd</span></button>
       <nav className="toolbar-actions" aria-label="Account and appearance">
-        {signedIn && <button className="text-button" onClick={() => setPage('library')}>Your Quizzes</button>}
-        {signedIn && settings?.isAdmin && <button className="text-button" onClick={() => setPage('admin')}>Publisher controls</button>}
+        {signedIn && settings?.isAdmin && <button className="text-button" onClick={() => setPage('admin')}><Icon name="settings" />Publisher controls</button>}
         <ThemeSwitch />
         {signedIn ? <button className="subtle" disabled={busy} onClick={() => void run(async () => {
           await connection!.client.auth.signOut();
           setDraft(blankDraft()); setEditing(undefined);
-        })}>Sign out</button> : <button className="subtle" disabled={!connection || busy} onClick={signIn}>Sign in with Microsoft Entra</button>}
+        })}><Icon name="logout" />Sign out</button> : <button className="subtle" disabled={!connection || busy} onClick={signIn}><Icon name="join" />Sign in with Microsoft Entra</button>}
       </nav>
     </header>
     <main id="content" ref={content} tabIndex={-1} className={`app-content page-${page}`}>
@@ -175,9 +181,9 @@ export default function App() {
       {page === 'home' && <div className="home-screen forms-home">
         <h1 className="sr-only">QuizCrowd live quizzes and surveys</h1>
         <div className="home-actions">
-          <button className="primary" onClick={() => create('quiz')}><Icon name="quiz" />New Live Quiz</button>
-          <button className="primary" onClick={() => create('survey')}><Icon name="survey" />New Live Survey</button>
-          <button className="join-code-button" onClick={() => { setPage('join'); setJoinStep('code'); setCode(''); setInvitation(''); }}>Join with Code</button>
+          <button className="primary" disabled={!connection || busy} onClick={() => create('quiz')}><Icon name="quiz" />New Live Quiz</button>
+          <button className="primary survey-action" disabled={!connection || busy} onClick={() => create('survey')}><Icon name="survey" />New Live Survey</button>
+          <button className="join-code-button" disabled={busy} onClick={() => { setPage('join'); setJoinStep('code'); setCode(''); setInvitation(''); }}><Icon name="join" />Join with Code</button>
         </div>
         {signedIn ? recent
           : <section className="card home-signin"><h2>Recent Quiz &amp; Surveys</h2><p className="muted">Sign in with Microsoft Entra to create and manage your sessions. Attendees can join using a six-digit game code.</p></section>}
@@ -200,13 +206,6 @@ export default function App() {
           </form>}
         </section>
       </div>}
-      {page === 'library' && <div className="library-page page-container">
-        <div className="section-heading page-heading">{back}<div><h1>Your Quizzes</h1><p className="muted small">Your sessions, saved in Fabric SQL.</p></div>{signedIn && <button className="subtle" disabled={busy} onClick={() => void run(() => refresh())}>Refresh library</button>}</div>
-        {!signedIn ? <section className="card sign-in-card"><h2>Host your next session</h2><p className="muted">Authoring and hosting always require Microsoft Entra sign-in. Create multiple-choice quizzes or manually author surveys.</p><button className="primary full-width" disabled={!connection || busy} onClick={signIn}>Sign in to create</button></section> : <>
-          <div className="home-actions"><button className="primary" onClick={() => create('quiz')}>New Live Quiz</button><button className="primary" onClick={() => create('survey')}>New Live Survey</button></div>
-          {recent}
-        </>}
-      </div>}
       {page === 'admin' && signedIn && settings?.isAdmin && <div className="publisher-page page-container">
         <div className="section-heading page-heading">{back}<h1>Publisher controls</h1></div>
         <section className="card"><h2>Anonymous attendance</h2><p className="muted">Disabling anonymous access denies all further guest operations, including existing guest sessions, after in-flight transactions finish. Previously downloaded public questions cannot be recalled.</p>
@@ -216,7 +215,7 @@ export default function App() {
           <p className="muted small">Enable only after completing the public deployment and negative-authorization checks in the deployment guide.</p><p className="badge">Revocation generation: {settings.guestEpoch}</p>
         </section>
       </div>}
-      {page === 'author' && signedIn && <AuthorEditor draft={draft} onChange={setDraft} editing={!!editing} readOnly={readOnly} anonymousEnabled={!!settings?.anonymousEnabled} busy={busy} onBack={() => setPage('library')} onHost={editing ? () => host(editing) : undefined} onRevokePublic={editing && draft.visibility === 'public' ? () => void run(async () => {
+      {page === 'author' && signedIn && <AuthorEditor draft={draft} onChange={setDraft} editing={!!editing} readOnly={readOnly} anonymousEnabled={!!settings?.anonymousEnabled} busy={busy} onBack={home} onHost={editing ? () => host(editing) : undefined} onRevokePublic={editing && draft.visibility === 'public' ? () => void run(async () => {
         await call(connection!, { command: 'visibility', id: editing, visibility: 'internal' }); await refresh(); await loadDraft(editing);
       }) : undefined} onSave={() => void run(async () => {
         const saved = await call<{ id: string }>(connection!, { command: editing ? 'edit' : 'create', id: editing, draft });
