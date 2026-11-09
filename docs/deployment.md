@@ -125,6 +125,15 @@ private SQL Database; never recreate the database or reset Settings:
 Do not roll back to the old code generator after the numeric constraint is
 installed. No attendee privileges or tenant policy changes are part of this migration.
 
+The staged upgrade was executed against the existing Fabric test database.
+All five existing games retained their IDs, content, participants, responses
+and progression; only canonical code values changed, with all five old-code
+aliases retained. Settings/administrator/audit readback was unchanged and
+re-running the migration was idempotent. Separate trusted-fixture integration
+checks used the actual Fabric SQL engine and compiled service/SqlStore, including
+a forced real unique-key collision and concurrent duplicate answer submissions.
+This is not a new authenticated browser or deployed-Function HTTP smoke test.
+
 ## 3. Deploy the Entra-only baseline
 
 Keep the committed defaults in `rayfin/rayfin.yml`:

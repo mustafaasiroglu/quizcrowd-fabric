@@ -138,10 +138,14 @@ App-level anonymous capabilities cannot access internal sessions.
 
 ## Limitations
 
-- **Platform validation pending:** Anonymous Function invocation/SQL token
-  binding, live DAB enforcement and SQL race behavior have not been tested
-  against a Fabric tenant. See deployment release gates. Local mocks do not
-  establish those properties.
+- **Platform validation boundaries:** An Entra-only test deployment passed the
+  documented single-account SDK/SQL/UI checks. Numeric-code migration and the
+  compiled service/SqlStore were also exercised against real Fabric SQL using
+  trusted synthetic subjects: unique-code retry, leading zeros, legacy aliases,
+  concurrent repeat answers, edit locks and ownership. These SQL integration
+  checks do not invoke the deployed Function HTTP gateway or prove a fresh
+  browser sign-in. Anonymous Function execution remains unpassed; see release
+  gates. Local mocks do not establish platform authorization.
 - **Not high-scale certified:** 500 attendees and 40 questions are hard caps,
   not throughput promises. Polling takes a game-row lock and rewrites JSON.
   Load-test expected capacity; a normalized SQL/procedure implementation or
