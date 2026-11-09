@@ -25,18 +25,19 @@ async function connect() {
     socket.addEventListener('error', reject, { once: true });
   });
   let id = 0;
-  const pending = new Map(), exceptions = [], network = [];
+  const pending = new Map(), exceptions = [], network = [], dialogs = [];
   socket.addEventListener('message', ({ data }) => {
     const message = JSON.parse(data);
     if (message.method === 'Runtime.exceptionThrown') exceptions.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
     if (message.method === 'Network.requestWillBeSent') network.push(message.params.request.url);
+    if (message.method === 'Page.javascriptDialogOpening') dialogs.push(message.params);
     const request = pending.get(message.id);
     if (!request) return;
     pending.delete(message.id); clearTimeout(request.timer);
     message.error ? request.reject(new Error(message.error.message)) : request.resolve(message.result);
   });
   return {
-    exceptions, network,
+    exceptions, network, dialogs,
     call(method, params = {}, sessionId) {
       return new Promise((resolve, reject) => {
         const requestId = ++id;
@@ -61,6 +62,15 @@ async function until(expression) {
 async function click(text) {
   const expression = `[...document.querySelectorAll('button')].find(e => e.textContent.trim() === ${JSON.stringify(text)})`;
   await pointerClick(expression);
+}
+async function clickWithConfirmation(text, accept) {
+  const count = cdp.dialogs.length;
+  const clicking = click(text);
+  for (let i = 0; i < 80 && cdp.dialogs.length === count; i++) await pause(50);
+  assert.equal(cdp.dialogs.length, count + 1);
+  assert.equal(cdp.dialogs.at(-1).type, 'confirm');
+  await cdp.call('Page.handleJavaScriptDialog', { accept }, session);
+  await clicking;
 }
 async function pointerClick(expression) {
   const { x, y } = await evaluate(`(() => { const button=${expression}; if (!button || button.disabled) throw new Error('Clickable control missing'); button.scrollIntoView({block:'center'}); const rect=button.getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2}; })()`);
@@ -95,7 +105,7 @@ async function inspectScreen(name) {
   const unnamed = tree.nodes.filter((node) => !node.ignored && ['button', 'textbox', 'combobox', 'checkbox', 'radio'].includes(node.role?.value) && !node.name?.value);
   assert.deepEqual(unnamed.map((node) => node.role.value), [], `${name}: unnamed interactive AX nodes`);
   const contrast = await evaluate(`(() => {
-    const parse = color => { const m=color.match(/[\\d.]+/g); return m ? m.map(Number) : [0,0,0,0]; };
+    const parse = color => { color=color.trim(); if (/^#[0-9a-f]{6}$/i.test(color)) return [1,3,5].map(i=>parseInt(color.slice(i,i+2),16)); const m=color.match(/[\\d.]+/g); return m ? m.map(Number) : [0,0,0,0]; };
     const composite = (fg,bg) => {const a=fg[3] ?? 1; return [0,1,2].map(i=>fg[i]*a+bg[i]*(1-a));};
     const lum = rgb => rgb.slice(0,3).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((a,v,i)=>a+v*[.2126,.7152,.0722][i],0);
     const ratio = (a,b) => {const x=lum(a),y=lum(b); return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);};
@@ -166,21 +176,23 @@ try {
       const label = `${theme}-${size}`;
       await check(`${label}: home layout, theme and accessibility`, async () => {
         assert.equal(await evaluate('document.documentElement.dataset.theme'), theme);
-        assert.equal(await evaluate('getComputedStyle(document.querySelector(".home-heading h1")).fontSize'), size === 'desktop' ? '72px' : '48px');
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions button")].map(e=>e.textContent.trim())'), ['New Live Quiz','New Live Survey','Join with Code']);
+        assert.equal(await evaluate('document.body.textContent.includes("Publisher bootstrap identity")'), false);
         await inspectScreen(`${label}-home`);
         const { root } = await cdp.call('DOM.getDocument', {}, session);
-        const { nodeId } = await cdp.call('DOM.querySelector', { nodeId: root.nodeId, selector: '.home-actions .secondary' }, session);
+        const { nodeId } = await cdp.call('DOM.querySelector', { nodeId: root.nodeId, selector: '.home-actions .primary' }, session);
         for (const forcedPseudoClasses of [[], ['hover'], ['focus'], ['active']]) {
           await cdp.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses }, session);
-          assert.equal(await evaluate('getComputedStyle(document.querySelector(".home-actions .secondary")).color'), 'rgb(255, 255, 255)');
+          assert.equal(await evaluate('getComputedStyle(document.querySelector(".home-actions .primary")).color'), 'rgb(255, 255, 255)');
         }
         await cdp.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] }, session);
         await screenshot(`${label}-home`);
       });
       await check(`${label}: join without question preview and Entra attendee submission`, async () => {
-        await click('Join a Quiz');
+        await click('Join with Code');
         assert.equal(await evaluate('document.querySelector(".join-card").textContent.includes("View questions")'), false);
-        await input('#session-code', 'A1B2C3D4E5'); await click('Next');
+        await input('#session-code', '000123'); await click('Next');
+        assert.equal(await evaluate('document.querySelector(".join-code strong").textContent'), '000123');
         await input('#nickname', 'Alex'); await inspectScreen(`${label}-join`); await screenshot(`${label}-join`);
         assert.equal(await evaluate('document.querySelector(".join-card").textContent.includes("View questions")'), false);
         assert.equal(await evaluate('window.__quizcrowdFixture.requests.some(r=>r.command==="preview")'), false);
@@ -197,40 +209,43 @@ try {
         await click('Play Again');
         assert.equal(await evaluate('sessionStorage.getItem("quizcrowd-attendee-credential")'), null);
       });
-      await check(`${label}: question editing, keyboard settings dialog and internal/public gates`, async () => {
-        await click('Host a Quiz');
+      await check(`${label}: Forms editor, settings sidebar, keyboard deletion dialog and audience gates`, async () => {
+        await click('New Live Quiz');
         await input('#quiz-title', 'Friday Team Quiz');
-        assert.equal(await evaluate('document.querySelector(\'option[value="public"]\').disabled'), true);
+        assert.equal(await evaluate('document.querySelector(\'input[value="public"]\').disabled'), true);
         await input('#question-0', 'Where does QuizCrowd store your quiz data?');
         for (const [i, option] of ['Fabric SQL', 'Browser storage', 'A shared file', 'In memory'].entries()) await input(`#option-0-${i}`, option);
         assert.equal(await evaluate('document.querySelector("form").checkValidity()'), false);
         await pointerClick('document.querySelector(\'[aria-label="Question 1, correct option 1"]\')');
-        await pointerClick('document.querySelector(\'[aria-label="Game settings"]\')');
+        assert.equal(await evaluate('document.querySelector(".settings-panel").getBoundingClientRect().left > document.querySelector(".author-content").getBoundingClientRect().left'), size === 'desktop');
+        await inspectScreen(`${label}-settings`);
+        await screenshot(`${label}-settings`);
+        await click('+ Add Question');
+        await input('#question-1', 'Ready for another round?');
+        for (const [i, option] of ['Yes', 'Absolutely', 'One more', 'Ready'].entries()) await input(`#option-1-${i}`, option);
+        await pointerClick('document.querySelector(\'[aria-label="Question 2, correct option 1"]\')');
+        await pointerClick('document.querySelector(\'[aria-label="Remove question 2"]\')');
         await until('document.querySelector("dialog")?.open');
-        assert.equal(await evaluate('document.activeElement.closest("dialog") !== null'), true);
         for (let i = 0; i < 7; i++) {
           await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 }, session);
           await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 }, session);
           assert.equal(await evaluate('document.activeElement.closest("dialog") !== null'), true);
         }
-        await inspectScreen(`${label}-settings`);
-        await screenshot(`${label}-settings`);
+        await inspectScreen(`${label}-delete-dialog`); await screenshot(`${label}-delete-dialog`);
         await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, session);
         await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, session);
         await until('!document.querySelector("dialog")');
-        assert.equal(await evaluate('document.activeElement.getAttribute("aria-label")'), 'Game settings');
-        await click('+ Add Question');
-        await input('#question-1', 'Ready for another round?');
-        for (const [i, option] of ['Yes', 'Absolutely', 'One more', 'Ready'].entries()) await input(`#option-1-${i}`, option);
-        await pointerClick('document.querySelector(\'[aria-label="Question 2, correct option 1"]\')');
+        assert.equal(await evaluate('document.activeElement.getAttribute("aria-label")'), 'Remove question 2');
         await evaluate('document.querySelector(\'[aria-label="Move question 2 up"]\').click()');
         assert.equal(await evaluate('document.querySelector("#question-0").value'), 'Ready for another round?');
         await evaluate('document.querySelector(\'[aria-label="Move question 1 down"]\').click()');
         await inspectScreen(`${label}-author`); await screenshot(`${label}-author`);
-        await click('Create & Open Lobby'); await until('!!document.querySelector(".host-lobby")');
+        await click('Save & Open Lobby'); await until('!!document.querySelector(".host-lobby")');
       });
       await check(`${label}: host QR, timer, reveal, leaderboard and podium`, async () => {
         assert.equal(await evaluate('document.querySelectorAll(".qr-container svg").length'), 1);
+        assert.equal(await evaluate('document.querySelector(".session-code strong").textContent'), '000123');
+        assert.equal(await evaluate('new URL(document.querySelector(".join-link a").href).searchParams.get("code")'), '000123');
         await inspectScreen(`${label}-host-lobby`); await screenshot(`${label}-host-lobby`);
         await click('Start Game'); await until('!!document.querySelector(".host-stage.stage-question")');
         assert.equal(await evaluate('document.querySelectorAll(".answers button").length'), 0);
@@ -245,6 +260,31 @@ try {
       });
       await check(`${label}: SQL-library presentation, publisher controls, reload persistence`, async () => {
         await click('Your Quizzes'); await inspectScreen(`${label}-library`); await screenshot(`${label}-library`);
+        await click('View'); await until('!!document.querySelector(".readonly-notice")');
+        assert.equal(await evaluate('document.querySelector(".author-content").disabled'), true);
+        assert.equal(await evaluate('document.querySelector(".author button[type=submit]") === null'), true);
+        assert.equal(await evaluate('[...document.querySelectorAll("button")].some(e=>e.textContent==="Open Lobby")'), true);
+        await inspectScreen(`${label}-readonly`); await screenshot(`${label}-readonly`);
+        await click('Your Quizzes');
+        await pointerClick('document.querySelector(".session-menu summary")');
+        assert.equal(await evaluate('document.querySelector(".session-menu").open'), true);
+        await inspectScreen(`${label}-menu`); await screenshot(`${label}-menu`);
+        await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, session);
+        await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, session);
+        assert.equal(await evaluate('document.querySelector(".session-menu").open'), false);
+        assert.equal(await evaluate('document.activeElement.tagName'), 'SUMMARY');
+        await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', text: '\r', windowsVirtualKeyCode: 13 }, session);
+        await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, session);
+        await until('document.querySelector(".session-menu").open');
+        await click('Duplicate'); await until('!!document.querySelector(".author-content:not(:disabled)")');
+        assert.equal(await evaluate('document.querySelector(".readonly-notice")===null'), true);
+        assert.ok(await evaluate('window.__quizcrowdFixture.requests.some(r=>r.command==="duplicate")'));
+        await click('Your Quizzes'); await until('!!document.querySelector(".session-menu")');
+        assert.equal(await evaluate('document.querySelector(".session-metrics").textContent'), '0 participants0 responses');
+        await pointerClick('document.querySelector(".session-menu summary")'); await clickWithConfirmation('Delete', false);
+        assert.equal(await evaluate('document.querySelectorAll(".session-card").length'), 1);
+        await pointerClick('document.querySelector(".session-menu summary")'); await clickWithConfirmation('Delete', true);
+        await until('!!document.querySelector(".empty-library")');
         await click('Publisher controls'); await inspectScreen(`${label}-publisher`); await screenshot(`${label}-publisher`);
         await cdp.call('Page.reload', {}, session); await until('!!document.querySelector(".home-screen")'); await pause(200);
         assert.equal(await evaluate('document.documentElement.dataset.theme'), theme);
@@ -254,12 +294,12 @@ try {
     }
   }
   await check('survey authoring preserves null keys and no-scoring completion', async () => {
-    await navigate(); await click('Host a Quiz');
-    await evaluate(`(() => {const select=[...document.querySelectorAll('select')].find(e=>e.querySelector('option[value="survey"]')); const setter=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set; setter.call(select,'survey'); select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-    assert.equal(await evaluate('document.querySelectorAll(\'input[type="radio"]\').length'), 0);
+    await navigate(); await click('New Live Survey');
+    assert.equal(await evaluate('document.querySelectorAll(\'[aria-label*="correct option"]\').length'), 0);
+    assert.equal(await evaluate('[...document.querySelectorAll(".settings-panel select")].at(-1).disabled'), true);
     await input('#quiz-title', 'Team Survey'); await input('#question-0', 'How was the session?');
     for (const [i, option] of ['Great', 'Good', 'Okay', 'Needs work'].entries()) await input(`#option-0-${i}`, option);
-    await click('Create & Open Lobby'); await until('!!document.querySelector(".host-lobby")');
+    await click('Save & Open Lobby'); await until('!!document.querySelector(".host-lobby")');
     const request = await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="create")');
     assert.equal(request.draft.mode, 'survey'); assert.equal(request.draft.questions[0].correctIndex, null);
     await phase('reveal'); assert.equal(await evaluate('document.querySelector(".reveal-screen").textContent.includes("Correct Answer")'), false);
@@ -267,12 +307,19 @@ try {
     await screenshot('light-mobile-survey-finished');
   });
   await check('public warning requires acknowledgement and creator cannot see publisher admin', async () => {
-    await navigate('?fixture=creator&guests=on'); await click('Host a Quiz');
+    await navigate('?fixture=creator&guests=on'); await click('New Live Quiz');
     assert.equal(await evaluate('[...document.querySelectorAll("button")].some(e=>e.textContent==="Publisher controls")'), false);
-    await evaluate(`(() => {const select=[...document.querySelectorAll('select')].find(e=>e.querySelector('option[value="public"]')); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,'public'); select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await pointerClick('document.querySelector(\'input[value="public"]\')');
     assert.ok(await evaluate('document.querySelector(".warning").textContent.includes("all questions and response options accessible to anyone")'));
     assert.equal(await evaluate('document.querySelector(\'button[type="submit"]\').disabled'), true);
     await screenshot('light-mobile-public-warning');
+  });
+  await check('Legacy UUID invitations resolve to a six-digit string without displaying the ID', async () => {
+    const id = '11111111-2222-4333-8444-555555555555';
+    await navigate(`?quiz=${id}`);
+    await until('document.querySelector(".join-code strong")?.textContent==="000123"');
+    assert.equal(await evaluate(`document.body.textContent.includes(${JSON.stringify(id)})`), false);
+    assert.ok(await evaluate(`window.__quizcrowdFixture.requests.some(r=>r.command==="resolve"&&r.id===${JSON.stringify(id)})`));
   });
   await check('signed-out join preserves Entra gesture and hides host/admin capabilities', async () => {
     await navigate('?fixture=signed-out&quiz=test-session');

@@ -35,13 +35,23 @@ Settings is a singleton with `AnonymousEnabled` (initially false) and
 `GuestEpoch` (initially zero). Administrators is populated only by a trusted
 database administrator. Audit records global guest-access changes.
 
-Games uses a UUID key, random 10-character code, indexed owner subject and one
+Games uses a UUID key, cryptographically generated six-digit numeric string code,
+indexed owner subject and one
 JSON aggregate (`ISJSON` constrained). Each aggregate stores quiz/survey
 questions, response options, answer keys, visibility and game settings,
 participants, credential hashes/expiry, individual responses, scores, streaks,
 question timing and current phase. JSON is a database storage format, not a
 client cache or production file store. It is never returned wholesale to an
 attendee.
+
+The code is routing information, never a credential. `UQ_QuizCrowdCode` enforces
+persistent uniqueness. A real SQL code-uniqueness violation rolls back and retries
+the entire creation transaction, regenerating the code (six attempts maximum);
+other failures are not swallowed or retried. `002-six-digit-codes.sql` preserves
+old ten-character codes in a unique `LegacyCode` alias and changes only the
+canonical code and its JSON projection. Existing UUID links still resolve.
+Owner library summaries contain actual participant/answer-ledger counts, mode,
+creation time, status and edit lock, not the aggregate or answer keys.
 
 Every command opens its own SQL connection pool and **SERIALIZABLE**
 transaction. It reads Settings with a held shared lock, then loads the game with
@@ -110,10 +120,21 @@ the reveal phase. The initial answer acknowledgement is always just accepted,
 not correctness.
 
 Creators own their quizzes through the verified subject assigned by the server.
-Quiz payloads cannot specify owner/admin fields. Content is editable only while
-the lobby is empty; duplicate for another run. Audience can change independently
-during a game. Global administration does not implicitly grant ownership of
+Quiz payloads cannot specify owner/admin fields. Content is editable only in
+lobby with zero answers, even if attendees have already joined. The same held
+game lock serializes edits against start and submissions. Started or answered
+sessions open in an owner-only read-only view; hosting remains available.
+Public access can still be revoked while locked, but not enabled. Duplicating
+copies content/settings into a new owner-owned private lobby with a fresh ID/code
+and no participants, responses, progression or scores. Delete remains
+owner-authorized, with frontend confirmation. Global administration does not implicitly grant ownership of
 other creators' private quiz content.
+
+The organization-only audience uses the platform's tenant-bound Entra app
+authentication and Execute permissions, then the existing verified caller boundary.
+Authorized Entra B2B directory guests can be included; this label does not promise
+employee-only membership or accept browser email domains/roles as authorization.
+App-level anonymous capabilities cannot access internal sessions.
 
 ## Limitations
 
@@ -132,7 +153,8 @@ other creators' private quiz content.
 - **Retention:** No automatic TTL purge or export tooling. Owner deletion
   removes the game and its responses; trusted SQL administrators must establish
   backup, legal retention, audit retention and privacy procedures.
-- **Library:** Returns the first 100 owned games ordered by ID. Archive/delete
+- **Library:** Returns the 100 most recently created owned games, with ID as a
+  stable tie-break. Archive/delete
   old events; extended paging is not implemented.
 - **Session recovery:** Tab session storage preserves the attendee credential
   across reloads. A lost guest token cannot be recovered; 12-hour expiry is

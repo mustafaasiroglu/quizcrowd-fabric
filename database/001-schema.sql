@@ -21,6 +21,7 @@ BEGIN
   CREATE TABLE quizcrowd.Games (
     Id uniqueidentifier NOT NULL CONSTRAINT PK_QuizCrowdGames PRIMARY KEY,
     Code varchar(10) NOT NULL CONSTRAINT UQ_QuizCrowdCode UNIQUE,
+    LegacyCode varchar(10) NULL,
     OwnerSubject nvarchar(255) NOT NULL,
     Document nvarchar(max) NOT NULL CHECK (ISJSON(Document) = 1)
   );

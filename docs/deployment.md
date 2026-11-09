@@ -57,7 +57,9 @@ Keeping custom tables separate avoids manual changes to a Rayfin-managed schema.
 As a trusted database administrator:
 
 1. Open that SQL Database's writable query editor or connect with an approved SQL
-   client. Run `database/001-schema.sql`.
+   client. Run `database/001-schema.sql`, then
+   `database/002-six-digit-codes.sql` (preserve its `GO` batch boundary).
+   For an existing deployment, use the staged upgrade below instead.
 2. Obtain its actual `serverFqdn` and `databaseName` from the Fabric item's
    connection information. Do not copy a Warehouse/Lakehouse connection or use
    a database password.
@@ -100,6 +102,28 @@ necessarily a trusted publisher, but its runtime SQL user need not have that pow
 The SQL script is rerunnable for initial object creation and **does not reset**
 an existing guest switch. It is not a general migration engine. Back up data and
 review all subsequent schema changes.
+
+### Upgrading existing ten-character game codes
+
+Review/back up application data using your approved process. Use the same writable
+private SQL Database; never recreate the database or reset Settings:
+
+1. Execute only the first batch of `002-six-digit-codes.sql` to add nullable
+   `LegacyCode`. Existing Functions remain compatible with this additive change.
+2. Deploy the new Functions with `npx rayfin up functions deploy` and wait for
+   successful completion. They generate six-digit string codes but still accept
+   legacy codes/UUIDs.
+3. Execute the second batch to assign unique numeric codes to existing games,
+   retaining old codes as aliases. Settings and game locks serialize this against
+   live requests. Verify every canonical Code has six digits, equals
+   `JSON_VALUE(Document,'$.code')`, and that existing IDs/content/activity and
+   Settings/Administrators are unchanged. Re-running the migration is idempotent.
+4. Publish the frontend with `npx rayfin up staticapp deploy`. New invites use
+   `?code=000123`; old `?quiz=<UUID>`/old-code invites resolve without displaying
+   UUIDs. Codes remain routing information, not attendee credentials.
+
+Do not roll back to the old code generator after the numeric constraint is
+installed. No attendee privileges or tenant policy changes are part of this migration.
 
 ## 3. Deploy the Entra-only baseline
 
@@ -188,8 +212,13 @@ Publisher controls is shown only to an authenticated caller whose verified app
 subject is in that table; configuration commands repeat this check on the server.
 
 1. Sign in with the intended administrator account.
-2. Open **Your Quizzes** and expand **Publisher bootstrap identity** to copy the caller subject. It is the
-   app's verified opaque session subject, not necessarily an Entra object UUID.
+2. Obtain the account's verified opaque app subject through trusted Fabric app
+   user administration or a publisher-approved SDK diagnostic in that authenticated
+   session (`client.auth.getSession().user.id` after sign-in, verified with the
+   caller-scoped `CallerIdentity` query used by this app). It is not necessarily the
+   Entra object UUID. The normal user interface intentionally does not display
+   a bootstrap-identity diagnostic. Never paste session/access tokens into SQL,
+   support messages or source control.
 3. Independently confirm the account through the app's user administration and
    your organization's identity process. Do not trust an unsolicited subject
    supplied by a user seeking admin access.

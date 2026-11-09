@@ -2,12 +2,12 @@ import { z } from 'zod';
 import type { Store } from './sql-store.js';
 import {
   answer, control, createGame, Denied, Conflict, draftSchema, join, own, preview,
-  settingsView, signed, view, visibilityAllowed,
+  settingsView, signed, view, visibilityAllowed, authorDraft, guestAllowed, readOnly, summary,
 } from './domain.js';
 
 const requestSchema = z.object({
-  command: z.enum(['settings', 'configure', 'list', 'create', 'edit', 'visibility', 'delete', 'preview', 'join', 'state', 'host', 'answer', 'control']),
-  id: z.string().regex(/^(?:[0-9a-f-]{36}|[0-9A-F]{10})$/i).optional(),
+  command: z.enum(['settings', 'configure', 'list', 'create', 'edit', 'duplicate', 'resolve', 'visibility', 'delete', 'preview', 'join', 'state', 'host', 'answer', 'control']),
+  id: z.string().regex(/^(?:[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}|[0-9A-F]{10}|[0-9]{6})$/i).optional(),
   nickname: z.string().optional(),
   enabled: z.boolean().optional(),
   visibility: z.enum(['internal', 'public']).optional(),
@@ -37,23 +37,33 @@ export async function execute(
       return settingsView(await tx.setAnonymous(actor, input.enabled), true);
     }
     if (input.command === 'list') {
-      return (await tx.list(signed(subject))).map(({ id, code, title, phase, visibility }) =>
-        ({ id, code, title, phase, visibility }));
+      return (await tx.list(signed(subject))).map(summary);
     }
     if (input.command === 'create') {
       const game = createGame(input.draft, subject, settings, now);
       await tx.save(game, true);
-      return { id: game.id };
+      return { id: game.id, code: game.code };
     }
     if (!input.id) throw new Conflict('A quiz ID or join code is required.');
     const game = await tx.get(input.id);
     if (!game) throw new Denied('Quiz is unavailable.');
     let result: unknown;
     switch (input.command) {
+      case 'resolve':
+        if (!subject) guestAllowed(game, settings);
+        return { code: game.code };
+      case 'duplicate': {
+        own(game, subject);
+        const draft = { ...authorDraft(game), visibility: 'internal' as const, publicAcknowledged: false };
+        const copy = createGame(draft, subject, settings, now);
+        await tx.save(copy, true);
+        return { id: copy.id, code: copy.code };
+      }
       case 'preview': return preview(game, subject, settings);
       case 'visibility': {
         own(game, subject);
         if (!input.visibility) throw new Conflict('Choose an audience.');
+        if (readOnly(game) && input.visibility !== 'internal') throw new Conflict('This session is read-only. Public access can only be revoked.');
         const change = {
           ...game, visibility: input.visibility,
           publicAcknowledged: input.publicAcknowledged === true,
@@ -67,13 +77,9 @@ export async function execute(
       }
       case 'edit':
         own(game, subject);
-        if (!input.draft) return {
-          title: game.title, mode: game.mode, visibility: game.visibility,
-          publicAcknowledged: game.publicAcknowledged, lateJoin: game.lateJoin,
-          showAnswer: game.showAnswer, questions: game.questions,
-        };
+        if (!input.draft) return { ...summary(game), draft: authorDraft(game) };
+        if (readOnly(game)) throw new Conflict('Started sessions and sessions with responses are read-only. Duplicate this session to edit a new copy.');
         visibilityAllowed(input.draft, settings);
-        if (game.phase !== 'lobby' || game.participants.length) throw new Conflict('Only an empty lobby can be edited. Duplicate it instead.');
         Object.assign(game, input.draft);
         game.version++;
         result = { id: game.id };

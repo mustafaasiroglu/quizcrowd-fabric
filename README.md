@@ -19,8 +19,8 @@ publisher-controlled anonymous attendance, and application data persisted in
 
 | Experience | Included |
 | --- | --- |
-| Creator | Entra-only quiz/survey authoring, library, edit empty lobbies, duplicate, delete, change audience |
-| Host | Lobby, QR invite, session code, start/next controls, timed questions, reveal and leaderboard |
+| Creator | Forms-inspired quiz/survey cards and editor, edit unstarted sessions without responses, server-enforced read-only view, fresh private duplicate, confirmed owner-only delete |
+| Host | Lobby, QR invite, six-digit numeric game code, start/next controls, timed questions, reveal and leaderboard |
 | Attendee | Entra sign-in by default; optional anonymous guest for public quizzes only; per-tab secret attendee credential |
 | Game | Server-calculated scores (1,000 + up to 500 speed points), streaks, late-join policy, three answer-reveal policies |
 | Survey | Manually authored multiple-choice questions, timed collection and aggregate response counts; no scoring or AI generation |
@@ -101,17 +101,24 @@ packages/shared/         Public contracts and warning text
 packages/data/           CallerIdentity entity only, protected with claims.sub
 rayfin/functions/        Authorization, game rules, SQL persistence and Function
 database/001-schema.sql  Standalone Fabric SQL application tables, guest access off
+database/002-six-digit-codes.sql  Non-destructive numeric-code migration with legacy aliases
 docs/                   Deployment, admin operations, architecture and limitations
 tests/                  Local regression and authorization tests
 ```
 
-## Original interface, dark and light
+## Forms-inspired authoring, dark and light
 
-The frontend follows the original QuizCrowd layout: centered Join/Host home,
-two-step join, question cards and settings dialog, QR lobby, colorful answers,
-leaderboard and podium. **Dark is the default**; the only alternative is
-**Light**, saved across navigation and reloads. Entra, SQL-backed authoring,
-publisher controls and the Internal/Public security boundary are unchanged.
+Home offers **New Live Quiz**, **New Live Survey** and **Join with Code** above
+recent session cards. The editor places title/questions on the left and settings
+on the right, stacked on mobile. Started sessions or sessions with any submitted
+answer open read-only, including through the server API. Cards distinguish
+participants from individual question responses. A duplicate starts a new private
+lobby without activity. Six-digit codes preserve leading zeros; existing UUID
+invitations and old codes remain compatible through server-side resolution.
+The original QR lobby, colorful answers, leaderboard and podium remain.
+**Dark is the default**; the only alternative is **Light**, saved across
+navigation and reloads. Entra, SQL-backed persistence, trusted publisher controls
+and the Internal/Public authorization boundary remain.
 See [UI behavior and screenshot review](docs/ui.md) for intentional
 accessibility differences, local browser tests and exact capture paths.
 
@@ -144,8 +151,8 @@ dependencies; the corrected QR/lobby and timed host UI were redeployed and
 retested. Live tests used one real Entra account; foreign-owner and existing-guest
 negative cases used trusted SQL fixtures. Public anonymous execution remains a
 separate, unpassed release gate; see the [observed results](docs/deployment.md#release-gates).
-The subsequent original-style dark/light UI revision was validated locally,
-not redeployed to Fabric.
+Subsequent UI builds were published to the protected test app. New UI checks
+use local browser fixtures, not a fresh authenticated live browser session.
 
 ## Attribution and distribution
 

@@ -17,6 +17,9 @@ export class SqlStore implements Store {
   constructor(private readonly server: string, private readonly database: string, private readonly token: string) {}
 
   async transact<T>(work: (tx: UnitOfWork) => Promise<T>): Promise<T> {
+    return retryJoinCode(() => this.attempt(work));
+  }
+  private async attempt<T>(work: (tx: UnitOfWork) => Promise<T>): Promise<T> {
     // A separate pool per invocation prevents token/identity reuse across requests.
     const pool = new sql.ConnectionPool({
       server: this.server, database: this.database,
@@ -58,7 +61,7 @@ export class SqlStore implements Store {
         async get(idOrCode) {
           const r = await request().input('key', sql.NVarChar(36), idOrCode)
             .query<{ Document: string }>(
-              'SELECT Document FROM quizcrowd.Games WITH (UPDLOCK,HOLDLOCK) WHERE Id=TRY_CONVERT(uniqueidentifier,@key) OR Code=@key');
+              'SELECT Document FROM quizcrowd.Games WITH (UPDLOCK,HOLDLOCK) WHERE Id=TRY_CONVERT(uniqueidentifier,@key) OR Code=@key OR LegacyCode=@key');
           return r.recordset.length ? JSON.parse(r.recordset[0].Document) as Game : null;
         },
         async save(game, create = false) {
@@ -73,7 +76,7 @@ export class SqlStore implements Store {
         },
         async list(subject) {
           const r = await request().input('subject', sql.NVarChar(255), subject)
-            .query<{ Document: string }>('SELECT TOP (100) Document FROM quizcrowd.Games WHERE OwnerSubject=@subject ORDER BY Id');
+            .query<{ Document: string }>('SELECT TOP (100) Document FROM quizcrowd.Games WHERE OwnerSubject=@subject ORDER BY TRY_CONVERT(bigint,JSON_VALUE(Document,\'$.createdAt\')) DESC, Id');
           return r.recordset.map((row) => JSON.parse(row.Document) as Game);
         },
       };
@@ -88,5 +91,18 @@ export class SqlStore implements Store {
       }
       throw error;
     } finally { await pool.close(); }
+  }
+}
+export function isJoinCodeCollision(error: unknown): boolean {
+  return error instanceof sql.RequestError && typeof error.number === 'number' && [2601, 2627].includes(error.number) &&
+    error.message.includes('UQ_QuizCrowdCode');
+}
+export async function retryJoinCode<T>(work: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try { return await work(); }
+    catch (error) {
+      if (!isJoinCodeCollision(error) || attempt >= 5) throw error;
+      console.warn('QuizCrowd join-code collision; retrying the rolled-back transaction', attempt + 1);
+    }
   }
 }

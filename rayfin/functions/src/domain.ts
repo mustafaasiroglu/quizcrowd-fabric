@@ -1,6 +1,6 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import type { Draft, GameView, Phase, SettingsView } from '@rayfin-app/shared';
+import type { Draft, GameView, Phase, QuizSummary, SettingsView } from '@rayfin-app/shared';
 
 export class Denied extends Error {}
 export class Conflict extends Error {}
@@ -86,10 +86,20 @@ export function createGame(input: unknown, subject: string | null, settings: Set
   const draft = draftSchema.parse(input);
   visibilityAllowed(draft, settings);
   return {
-    ...draft, id: randomUUID(), code: randomBytes(5).toString('hex').toUpperCase(),
+    ...draft, id: randomUUID(), code: randomInt(1000000).toString().padStart(6, '0'),
     owner, createdAt: now, phase: 'lobby', version: 0, questionIndex: -1,
     questionStartedAt: 0, revealStartedAt: 0, participants: [], answers: [],
   };
+}
+export const readOnly = (game: Game): boolean => game.phase !== 'lobby' || game.answers.length > 0;
+export function summary(game: Game): QuizSummary {
+  const { id, code, title, mode, phase, visibility, createdAt } = game;
+  return { id, code, title, mode, phase, visibility, createdAt,
+    participantCount: game.participants.length, responseCount: game.answers.length, readOnly: readOnly(game) };
+}
+export function authorDraft(game: Game): Draft {
+  const { title, mode, visibility, publicAcknowledged, lateJoin, showAnswer, questions } = game;
+  return { title, mode, visibility, publicAcknowledged, lateJoin, showAnswer, questions };
 }
 export function preview(game: Game, subject: string | null, settings: Settings) {
   if (!subject) guestAllowed(game, settings);

@@ -50,7 +50,13 @@ export interface QuizSummary {
   title: string;
   phase: Phase;
   visibility: Visibility;
+  mode: Draft['mode'];
+  createdAt: number;
+  participantCount: number;
+  responseCount: number;
+  readOnly: boolean;
 }
+export interface AuthorView extends QuizSummary { draft: Draft }
 export interface SettingsView {
   anonymousEnabled: boolean;
   guestEpoch: number;

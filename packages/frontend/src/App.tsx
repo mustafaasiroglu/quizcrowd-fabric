@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Draft, GameView, QuizSummary, SettingsView } from '@rayfin-app/shared';
-import { PUBLIC_WARNING } from '@rayfin-app/shared';
+import type { AuthorView, Draft, GameView, QuizSummary, SettingsView } from '@rayfin-app/shared';
 import type { OpaqueSession } from '@microsoft/rayfin-auth';
 import { call, connect, type Connection } from './lib/rayfin-client';
 import { AuthorEditor, blankDraft } from './components/AuthorEditor';
 import { GameScreen } from './components/GameScreen';
 import { Icon } from './components/Icon';
 import { ThemeSwitch } from './components/ThemeSwitch';
+import { SessionLibrary } from './components/SessionLibrary';
 
 type Ticket = { id: string; token: string; guest: boolean };
 type Page = 'home' | 'join' | 'library' | 'admin' | 'author' | 'game';
@@ -21,10 +21,12 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [page, setPage] = useState<Page>(queryCode ? 'join' : 'home');
   const [joinStep, setJoinStep] = useState<'code' | 'nickname'>(queryCode ? 'nickname' : 'code');
-  const [code, setCode] = useState(queryCode);
+  const [code, setCode] = useState(/^\d{6}$/.test(queryCode) ? queryCode : '');
+  const [invitation, setInvitation] = useState(queryCode && !/^\d{6}$/.test(queryCode) ? queryCode : '');
   const [nickname, setNickname] = useState('');
   const [draft, setDraft] = useState<Draft>(blankDraft);
   const [editing, setEditing] = useState<string>();
+  const [readOnly, setReadOnly] = useState(false);
   const [quizzes, setQuizzes] = useState<QuizSummary[]>([]);
   const [ticket, setTicket] = useState<Ticket>();
   const [hostId, setHostId] = useState<string>();
@@ -72,6 +74,14 @@ export default function App() {
   useEffect(() => {
     if (connection) refresh(connection).catch((e: unknown) => setError(message(e)));
   }, [connection, session]);
+  useEffect(() => {
+    if (!connection || !invitation) return;
+    let active = true;
+    call<{ code: string }>(connection, { command: 'resolve', id: invitation })
+      .then((result) => { if (active) { setCode(result.code); setInvitation(''); } })
+      .catch((e: unknown) => { if (active) setError(message(e)); });
+    return () => { active = false; };
+  }, [connection, invitation, session]);
 
   async function run(action: () => Promise<void>) {
     setBusy(true); setError('');
@@ -123,28 +133,32 @@ export default function App() {
     sessionStorage.setItem(TICKET_KEY, JSON.stringify({ ...result, guest }));
     setHostId(undefined); setTicket({ ...result, guest }); setGame(undefined); setPage('game');
   }
-  async function loadDraft(id: string, duplicate: boolean) {
+  async function loadDraft(id: string) {
     if (!connection) return;
-    const saved = await call<Draft>(connection, { command: 'edit', id });
-    setDraft(duplicate ? { ...saved, visibility: 'internal', publicAcknowledged: false } : saved);
-    setEditing(duplicate ? undefined : id); setPage('author');
+    const saved = await call<AuthorView>(connection, { command: 'edit', id });
+    setDraft(saved.draft); setReadOnly(saved.readOnly);
+    setEditing(id); setPage('author');
   }
   function home() {
     sessionStorage.removeItem(TICKET_KEY);
     setTicket(undefined); setGame(undefined); setHostId(undefined); setError(''); setPage('home');
     if (connection) void run(() => refresh());
   }
-  function create() { setDraft(blankDraft()); setEditing(undefined); setPage('author'); }
-  const joinUrl = game ? `${location.origin}${location.pathname}?quiz=${game.id}` : '';
+  function create(mode: Draft['mode']) { setDraft(blankDraft(mode)); setReadOnly(false); setEditing(undefined); setPage(signedIn ? 'author' : 'library'); }
+  function host(id: string) { setHostId(id); setTicket(undefined); setGame(undefined); setPage('game'); }
+  const joinUrl = game ? `${location.origin}${location.pathname}?code=${game.code}` : '';
   const seconds = game?.question && game.questionStartedAt
     ? Math.max(0, Math.ceil((game.questionStartedAt + game.question.duration * 1000 - clock - skew.current) / 1000)) : 0;
   const back = <button className="icon-button" aria-label="Go back" onClick={home}><Icon name="back" /></button>;
+  const recent = <SessionLibrary quizzes={quizzes} busy={busy} onOpen={(q) => void run(() => loadDraft(q.id))}
+    onDuplicate={(id) => void run(async () => { const copy = await call<{ id: string }>(connection!, { command: 'duplicate', id }); await refresh(); await loadDraft(copy.id); })}
+    onDelete={(id) => void run(async () => { if (window.confirm('Delete this session and all participant responses permanently?')) { await call(connection!, { command: 'delete', id }); await refresh(); } })} />;
 
   return <>
     <div className="shapes-wrapper" aria-hidden="true">{Array.from({ length: 12 }, (_, i) => <span key={i} />)}</div>
     <a className="skip-link" href="#content">Skip to content</a>
     <header className="app-toolbar">
-      {page !== 'home' && <button className="brand small-brand" onClick={home}><span>Quiz</span><span>Crowd</span></button>}
+      <button className="brand small-brand" onClick={home}><span>Quiz</span><span>Crowd</span></button>
       <nav className="toolbar-actions" aria-label="Account and appearance">
         {signedIn && <button className="text-button" onClick={() => setPage('library')}>Your Quizzes</button>}
         {signedIn && settings?.isAdmin && <button className="text-button" onClick={() => setPage('admin')}>Publisher controls</button>}
@@ -158,24 +172,29 @@ export default function App() {
     <main id="content" ref={content} tabIndex={-1} className={`app-content page-${page}`}>
       {error && <div role="alert" className="error">{error}</div>}
       {!connection && !error && <p role="status" className="connection-status muted">Connecting to Fabric...</p>}
-      {page === 'home' && <div className="home-screen">
-        <div className="home-heading"><h1 className="brand"><span>Quiz</span><span>Crowd</span></h1><p className="muted">Real-time &amp; multi-player quizzes, for free!</p></div>
-        <div className="home-actions"><button className="primary large-button" onClick={() => { setPage('join'); setJoinStep(code ? 'nickname' : 'code'); }}>Join a Quiz</button><button className="secondary large-button" onClick={() => signedIn ? create() : setPage('library')}>Host a Quiz</button></div>
-        <div className="home-description"><p>QuizCrowd brings live classroom and team games to Microsoft Fabric. Create multiple-choice quizzes or surveys, share a code, and play.</p><p className="small">Microsoft Entra sign-in is required by default. Anonymous attendance is controlled by the publisher.</p></div>
+      {page === 'home' && <div className="home-screen forms-home">
+        <h1 className="sr-only">QuizCrowd live quizzes and surveys</h1>
+        <div className="home-actions">
+          <button className="primary" onClick={() => create('quiz')}><Icon name="quiz" />New Live Quiz</button>
+          <button className="primary" onClick={() => create('survey')}><Icon name="survey" />New Live Survey</button>
+          <button className="join-code-button" onClick={() => { setPage('join'); setJoinStep('code'); setCode(''); setInvitation(''); }}>Join with Code</button>
+        </div>
+        {signedIn ? recent
+          : <section className="card home-signin"><h2>Recent Quiz &amp; Surveys</h2><p className="muted">Sign in with Microsoft Entra to create and manage your sessions. Attendees can join using a six-digit game code.</p></section>}
       </div>}
       {page === 'join' && <div className="centered-page">
         <section className="card join-card">
           <div className="section-heading page-heading"><button className="icon-button" aria-label="Go back" onClick={() => joinStep === 'nickname' ? setJoinStep('code') : home()}><Icon name="back" /></button><h1>Join Quiz</h1></div>
-          {joinStep === 'code' ? <form onSubmit={(e) => { e.preventDefault(); if (code.trim().length >= 4) setJoinStep('nickname'); }}>
-            <label htmlFor="session-code">Session Code or Quiz ID</label>
-            <input id="session-code" className="code-input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))} placeholder="ABCDEF" maxLength={36} autoComplete="off" required minLength={4} />
-            <button type="submit" className="primary full-width" disabled={code.trim().length < 4}>Next</button>
+          {joinStep === 'code' ? <form onSubmit={(e) => { e.preventDefault(); if (/^\d{6}$/.test(code)) setJoinStep('nickname'); }}>
+            <label htmlFor="session-code">Game Code</label>
+            <input id="session-code" className="code-input" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="off" required minLength={6} />
+            <button type="submit" className="primary full-width" disabled={!/^\d{6}$/.test(code)}>Next</button>
           </form> : <form onSubmit={(e) => { e.preventDefault(); if (signedIn) void run(() => enter(false)); }}>
-            <p className="muted join-code">Code: <strong>{code}</strong></p>
+            <p className="muted join-code">{invitation ? 'Resolving invitation...' : <>Code: <strong>{code}</strong></>}</p>
             <label htmlFor="nickname">Your Nickname</label>
             <input id="nickname" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="Enter nickname..." maxLength={24} required />
-            {signedIn ? <button type="submit" className="primary full-width" disabled={busy || !nickname.trim()}>{busy ? 'Joining...' : 'Join Game'}</button> : <button type="button" className="primary full-width" disabled={busy || !connection} onClick={signIn}>Sign in to attend</button>}
-            {settings?.anonymousEnabled && <button type="button" className="secondary full-width guest-join" disabled={busy || !nickname.trim()} onClick={() => void run(() => enter(true))}>Join as anonymous guest</button>}
+            {signedIn ? <button type="submit" className="primary full-width" disabled={busy || !nickname.trim() || !/^\d{6}$/.test(code)}>{busy ? 'Joining...' : 'Join Game'}</button> : <button type="button" className="primary full-width" disabled={busy || !connection} onClick={signIn}>Sign in to attend</button>}
+            {settings?.anonymousEnabled && <button type="button" className="secondary full-width guest-join" disabled={busy || !nickname.trim() || !/^\d{6}$/.test(code)} onClick={() => void run(() => enter(true))}>Join as anonymous guest</button>}
             <p className="muted small">Use a pseudonym. Nicknames and leaderboard scores are visible to other attendees. Your secret attendee credential stays in this tab.</p>
             {!settings?.anonymousEnabled && <p className="muted small">Anonymous attendance is disabled by the publisher.</p>}
           </form>}
@@ -184,26 +203,8 @@ export default function App() {
       {page === 'library' && <div className="library-page page-container">
         <div className="section-heading page-heading">{back}<div><h1>Your Quizzes</h1><p className="muted small">Your sessions, saved in Fabric SQL.</p></div>{signedIn && <button className="subtle" disabled={busy} onClick={() => void run(() => refresh())}>Refresh library</button>}</div>
         {!signedIn ? <section className="card sign-in-card"><h2>Host your next session</h2><p className="muted">Authoring and hosting always require Microsoft Entra sign-in. Create multiple-choice quizzes or manually author surveys.</p><button className="primary full-width" disabled={!connection || busy} onClick={signIn}>Sign in to create</button></section> : <>
-          <div className="library-stats"><div><span className="muted small">Your Sessions</span><strong>{quizzes.length}</strong></div><div><span className="muted small">In Lobby</span><strong>{quizzes.filter((q) => q.phase === 'lobby').length}</strong></div><div><span className="muted small">Finished</span><strong>{quizzes.filter((q) => q.phase === 'finished').length}</strong></div></div>
-          <button className="secondary full-width create-session" onClick={create}>Create quiz or survey</button>
-          {!quizzes.length && <section className="card empty-library"><p className="muted">No quizzes yet. Create your first session.</p></section>}
-          {quizzes.map((q) => <article className="card library-item" key={q.id}>
-            <div className="section-heading"><h2>{q.title}</h2><span className={`badge phase-${q.phase}`}>{q.phase}</span></div><p className="muted small">{q.code} · {q.visibility === 'public' ? 'Anyone (Public)' : 'Internal Only'}</p>
-            <div className="actions">
-              <button className="primary" onClick={() => { setHostId(q.id); setTicket(undefined); setGame(undefined); setPage('game'); }}>Host</button>
-              <button disabled={busy} onClick={() => void run(() => loadDraft(q.id, false))}>Edit</button>
-              <button disabled={busy} onClick={() => void run(() => loadDraft(q.id, true))}>Duplicate</button>
-              <button disabled={busy || (q.visibility === 'internal' && !settings?.anonymousEnabled)} onClick={() => void run(async () => {
-                const visibility = q.visibility === 'public' ? 'internal' : 'public';
-                if (visibility === 'public' && !window.confirm(PUBLIC_WARNING)) return;
-                await call(connection!, { command: 'visibility', id: q.id, visibility, publicAcknowledged: visibility === 'public' }); await refresh();
-              })}>{q.visibility === 'public' ? 'Make internal' : 'Make public'}</button>
-              <button className="danger" disabled={busy} onClick={() => void run(async () => {
-                if (window.confirm('Delete this quiz and all participant responses permanently?')) { await call(connection!, { command: 'delete', id: q.id }); await refresh(); }
-              })}>Delete</button>
-            </div>
-          </article>)}
-          <details className="bootstrap-details"><summary>Publisher bootstrap identity</summary><p className="muted small">Your verified caller subject for trusted SQL bootstrap: <code>{session?.user?.id}</code></p></details>
+          <div className="home-actions"><button className="primary" onClick={() => create('quiz')}>New Live Quiz</button><button className="primary" onClick={() => create('survey')}>New Live Survey</button></div>
+          {recent}
         </>}
       </div>}
       {page === 'admin' && signedIn && settings?.isAdmin && <div className="publisher-page page-container">
@@ -215,9 +216,11 @@ export default function App() {
           <p className="muted small">Enable only after completing the public deployment and negative-authorization checks in the deployment guide.</p><p className="badge">Revocation generation: {settings.guestEpoch}</p>
         </section>
       </div>}
-      {page === 'author' && signedIn && <AuthorEditor draft={draft} onChange={setDraft} editing={!!editing} anonymousEnabled={!!settings?.anonymousEnabled} busy={busy} onBack={() => setPage('library')} onLibrary={() => setPage('library')} onSave={() => void run(async () => {
+      {page === 'author' && signedIn && <AuthorEditor draft={draft} onChange={setDraft} editing={!!editing} readOnly={readOnly} anonymousEnabled={!!settings?.anonymousEnabled} busy={busy} onBack={() => setPage('library')} onHost={editing ? () => host(editing) : undefined} onRevokePublic={editing && draft.visibility === 'public' ? () => void run(async () => {
+        await call(connection!, { command: 'visibility', id: editing, visibility: 'internal' }); await refresh(); await loadDraft(editing);
+      }) : undefined} onSave={() => void run(async () => {
         const saved = await call<{ id: string }>(connection!, { command: editing ? 'edit' : 'create', id: editing, draft });
-        setHostId(saved.id); setTicket(undefined); setGame(undefined); setPage('game');
+        await refresh(); host(saved.id);
       })} />}
       {page === 'game' && (!game ? <div className="centered-page"><section className="card loading-card"><div className="loading-spinner" /><p role="status">{error ? 'Session unavailable.' : 'Loading session...'}</p>{error && <button className="primary" onClick={home}>Back to Home</button>}</section></div> : <GameScreen game={game} host={showingHost} guest={!!ticket?.guest} nickname={nickname} seconds={seconds} joinUrl={joinUrl} busy={busy} onCopyError={(e) => setError(`Could not copy to clipboard: ${message(e)}`)} onHome={home} onControl={() => void run(async () => {
         await call(connection!, { command: 'control', id: game.id, action: game.phase === 'lobby' ? 'start' : 'next', version: game.version });

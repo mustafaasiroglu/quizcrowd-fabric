@@ -11,7 +11,7 @@ const game: GameView = {
 };
 let ui: {
   renderGame(game: GameView, host?: boolean): string;
-  renderEditor(draft?: Partial<Draft>, anonymousEnabled?: boolean): string;
+  renderEditor(draft?: Partial<Draft>, anonymousEnabled?: boolean, readOnly?: boolean): string;
   removeOption(question: Question, index: number): Question;
 };
 beforeAll(async () => {
@@ -31,8 +31,8 @@ beforeAll(async () => {
         import { GameScreen } from './src/components/GameScreen';
         export { removeOption };
         const noop = () => {};
-        export function renderEditor(patch = {}, anonymousEnabled = false) {
-          return renderToStaticMarkup(h(AuthorEditor, {draft:{...blankDraft(),...patch},onChange:noop,editing:false,anonymousEnabled,busy:false,onSave:noop,onBack:noop,onLibrary:noop}));
+        export function renderEditor(patch = {}, anonymousEnabled = false, readOnly = false) {
+          return renderToStaticMarkup(h(AuthorEditor, {draft:{...blankDraft(),...patch},onChange:noop,editing:false,anonymousEnabled,readOnly,busy:false,onSave:noop,onBack:noop}));
         }
         export function renderGame(game, host = false) {
           return renderToStaticMarkup(h(GameScreen,{game,host,guest:false,nickname:'Alex',seconds:10,joinUrl:'https://test.invalid/?quiz=game',busy:false,onControl:noop,onAnswer:noop,onHome:noop,onCopyError:noop}));
@@ -102,14 +102,26 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
   });
   it('retains explicit public acknowledgement and publisher-off disabling', () => {
     const editor = ui.renderEditor();
-    expect(editor).toContain('value="public" disabled=""');
-    expect(editor).toContain('Internal Only');
+    expect(editor).toMatch(/disabled=""[^>]*value="public"/);
+    expect(editor).toContain('Only people in my organization can respond');
     expect(ui.renderEditor({ visibility: 'public' }, true)).toContain('all questions and response options accessible to anyone');
     expect(ui.renderEditor({ visibility: 'public' }, true)).toContain('I understand and choose public access.');
   });
   it('uses native keyboard-accessible answer radios and omits them for surveys', () => {
     expect(ui.renderEditor()).toContain('type="radio"');
-    expect(ui.renderEditor({ mode: 'survey' })).not.toContain('type="radio"');
+    expect(ui.renderEditor({ mode: 'survey' })).not.toContain('correct option');
+    expect(ui.renderEditor({ mode: 'survey' })).toContain('Disabled for surveys');
+  });
+  it('renders the Forms-style settings sidebar and started-session read-only state', () => {
+    const editable = ui.renderEditor();
+    expect(editable).toContain('author-layout');
+    expect(editable).toContain('settings-panel');
+    expect(editable).toContain('Content Type');
+    const locked = ui.renderEditor({}, false, true);
+    expect(locked).toContain('Read-only:');
+    expect(locked).toContain('class="author-content" disabled=""');
+    expect(locked).not.toContain('Save &amp; Open Lobby');
+    expect(locked).not.toContain('Remove question');
   });
   it('adjusts selected answer indices when removing an option without changing survey nulls', () => {
     const question = { text: 'Q', options: ['A', 'B', 'C', 'D'], correctIndex: 2, duration: 20 };

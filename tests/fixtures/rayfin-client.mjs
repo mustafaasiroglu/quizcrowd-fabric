@@ -14,6 +14,8 @@ const draft = {
   ],
 };
 let currentDraft = structuredClone(draft);
+let deleted = false;
+let currentCode = '000123';
 let phase = 'lobby';
 let questionIndex = 0;
 let myOption;
@@ -24,7 +26,7 @@ function session() { return { isAuthenticated: authenticated, isAnonymous: !auth
 function view(attendee) {
   const q = currentDraft.questions[questionIndex];
   return {
-    id: 'test-session', code: 'A1B2C3D4E5', title: currentDraft.title, mode: currentDraft.mode,
+    id: 'test-session', code: currentCode, title: currentDraft.title, mode: currentDraft.mode,
     phase, version, questionIndex, totalQuestions: currentDraft.questions.length, serverNow: Date.now(),
     players, answerCount: myOption === undefined ? 0 : 1,
     ...(phase === 'question' || phase === 'reveal' ? { question: { text: q.text, options: q.options, duration: q.duration }, questionStartedAt: Date.now() - 15000 } : {}),
@@ -41,6 +43,11 @@ window.__quizcrowdFixture = {
   phase(next) { phase = next; version++; },
   revealMode(value) { currentDraft.showAnswer = value; },
 };
+function summary() {
+  return { id: 'test-session', code: currentCode, title: currentDraft.title, phase, visibility: currentDraft.visibility,
+    mode: currentDraft.mode, createdAt: 1794214800000, participantCount: players.length,
+    responseCount: myOption === undefined ? 0 : 1, readOnly: phase !== 'lobby' || myOption !== undefined };
+}
 const connection = {
   client: { auth: {
     getSession: session,
@@ -60,15 +67,24 @@ export async function call(_connection, request, token = '', asGuest = false) {
     case 'settings': return { ...settings, isAdmin: authenticated && admin };
     case 'list':
       if (!authenticated) throw new Error('Sign in to list sessions.');
-      return [{ id: 'test-session', code: 'A1B2C3D4E5', title: currentDraft.title, phase, visibility: currentDraft.visibility }];
+      return deleted ? [] : [summary()];
     case 'edit':
       if (!authenticated) throw new Error('Sign in to edit.');
-      if (request.draft) { currentDraft = structuredClone(request.draft); return { id: 'test-session' }; }
-      return structuredClone(currentDraft);
+      if (request.draft) {
+        if (summary().readOnly) throw new Error('Session is read-only.');
+        currentDraft = structuredClone(request.draft); return { id: 'test-session' };
+      }
+      return { ...summary(), draft: structuredClone(currentDraft) };
+    case 'resolve': return { code: currentCode };
+    case 'duplicate':
+      currentDraft = { ...structuredClone(currentDraft), visibility: 'internal', publicAcknowledged: false };
+      phase = 'lobby'; questionIndex = 0; myOption = undefined; deleted = false;
+      players.splice(0); currentCode = '000124';
+      return { id: 'test-session', code: currentCode };
     case 'create':
       if (!authenticated) throw new Error('Sign in to create.');
-      currentDraft = structuredClone(request.draft); phase = 'lobby'; questionIndex = 0; myOption = undefined;
-      return { id: 'test-session' };
+      currentDraft = structuredClone(request.draft); phase = 'lobby'; questionIndex = 0; myOption = undefined; deleted = false;
+      return { id: 'test-session', code: '000123' };
     case 'host':
       if (!authenticated) throw new Error('Host ownership required.');
       return view(false);
@@ -98,7 +114,7 @@ export async function call(_connection, request, token = '', asGuest = false) {
       return undefined;
     case 'visibility': currentDraft.visibility = request.visibility; return undefined;
     case 'preview': return { title: currentDraft.title, mode: currentDraft.mode, questions: currentDraft.questions.map(({ text, options }) => ({ text, options })) };
-    case 'delete': throw new Error('Fixture deletion is intentionally disabled.');
+    case 'delete': deleted = true; return { deleted: true };
     default: throw new Error(`Unknown fixture command: ${request.command}`);
   }
 }
