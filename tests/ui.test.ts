@@ -52,6 +52,15 @@ beforeAll(async () => {
 }, 20000);
 
 describe('original QuizCrowd screen structure with Fabric authorization controls', () => {
+  it('keeps the join preview out of the UI, the footer minimal and secondary text white', async () => {
+    const app = await readFile(new URL('../packages/frontend/src/App.tsx', import.meta.url), 'utf8');
+    const css = await readFile(new URL('../packages/frontend/src/global.css', import.meta.url), 'utf8');
+    expect(app).not.toContain('View questions');
+    expect(app).not.toContain("command: 'preview'");
+    expect(app).toContain('<footer>QuizCrowd for Microsoft Fabric</footer>');
+    expect(css).toContain('--qc-secondary-fg: #ffffff');
+    expect(css).not.toContain('--qc-secondary-fg: #281326');
+  });
   it('renders host QR invitation only in the lobby and disables empty-game start', () => {
     const lobby = ui.renderGame({ ...game, players: [] }, true);
     expect(lobby).toContain('Session Lobby');

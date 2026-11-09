@@ -12,7 +12,8 @@
   --qc-primary: #6c63ff;
   --qc-primary-text: #b6b1ff;
   --qc-secondary: #ff6584;
-  --qc-secondary-fg: #281326;
+  --qc-secondary-button: #c92f59;
+  --qc-secondary-fg: #ffffff;
   --qc-success: #43e97b;
   --qc-success-soft: rgb(67 233 123 / 14%);
   --qc-primary-soft: rgb(108 99 255 / 24%);
@@ -80,7 +81,7 @@ button:active:not(:disabled) { transform: scale(.97); }
 button:disabled { opacity: .5; cursor: not-allowed; }
 button.primary, button.secondary { border: 0; padding: 12px 24px; font-weight: 700; }
 button.primary { background: var(--qc-primary); color: var(--qc-button-fg); }
-button.secondary { background: var(--qc-secondary); color: var(--qc-secondary-fg); }
+button.secondary { background: var(--qc-secondary-button); color: var(--qc-secondary-fg); }
 button.primary:hover:not(:disabled), button.secondary:hover:not(:disabled) { filter: brightness(.92); transform: scale(1.03); }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--qc-primary-text); outline-offset: 3px; }
 button.subtle { background: transparent; color: var(--qc-muted); font-weight: 500; font-size: 14px; padding: 8px 12px; }
@@ -141,8 +142,6 @@ input[type="radio"] { cursor: pointer; }
 .join-card #nickname { margin-bottom: 16px; }
 .join-card form > .small { margin-top: 16px; }
 .guest-join { margin-top: 12px; }
-.question-preview { margin-top: 20px; border-top: 1px solid var(--qc-border); padding-top: 20px; }
-.question-preview > div { margin-top: 16px; }
 .author { max-width: 704px; }
 .author .card:not(.modal) { margin-bottom: 16px; }
 .title-card .section-heading label { margin: 0; }

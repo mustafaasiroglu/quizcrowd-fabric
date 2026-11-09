@@ -90,6 +90,7 @@ async function inspectScreen(name) {
   assert.ok(layout.scroll <= layout.width + 1, `${name}: horizontal overflow ${layout.scroll}/${layout.width}`);
   assert.deepEqual(layout.unnamed, [], `${name}: unnamed form controls`);
   assert.deepEqual(layout.themes, ['Dark', 'Light']);
+  assert.equal(await evaluate('document.querySelector("footer").textContent'), 'QuizCrowd for Microsoft Fabric');
   const tree = await cdp.call('Accessibility.getFullAXTree', {}, session);
   const unnamed = tree.nodes.filter((node) => !node.ignored && ['button', 'textbox', 'combobox', 'checkbox', 'radio'].includes(node.role?.value) && !node.name?.value);
   assert.deepEqual(unnamed.map((node) => node.role.value), [], `${name}: unnamed interactive AX nodes`);
@@ -151,6 +152,8 @@ try {
   await cdp.call('Page.bringToFront', {}, session);
   await cdp.call('Emulation.setFocusEmulationEnabled', { enabled: true }, session);
   await cdp.call('Runtime.enable', {}, session);
+  await cdp.call('DOM.enable', {}, session);
+  await cdp.call('CSS.enable', {}, session);
   await cdp.call('Network.enable', {}, session);
   await cdp.call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }, { name: 'prefers-color-scheme', value: 'light' }] }, session);
 
@@ -165,13 +168,22 @@ try {
         assert.equal(await evaluate('document.documentElement.dataset.theme'), theme);
         assert.equal(await evaluate('getComputedStyle(document.querySelector(".home-heading h1")).fontSize'), size === 'desktop' ? '72px' : '48px');
         await inspectScreen(`${label}-home`);
+        const { root } = await cdp.call('DOM.getDocument', {}, session);
+        const { nodeId } = await cdp.call('DOM.querySelector', { nodeId: root.nodeId, selector: '.home-actions .secondary' }, session);
+        for (const forcedPseudoClasses of [[], ['hover'], ['focus'], ['active']]) {
+          await cdp.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses }, session);
+          assert.equal(await evaluate('getComputedStyle(document.querySelector(".home-actions .secondary")).color'), 'rgb(255, 255, 255)');
+        }
+        await cdp.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] }, session);
         await screenshot(`${label}-home`);
       });
-      await check(`${label}: join code, nickname, preview and Entra attendee submission`, async () => {
+      await check(`${label}: join without question preview and Entra attendee submission`, async () => {
         await click('Join a Quiz');
+        assert.equal(await evaluate('document.querySelector(".join-card").textContent.includes("View questions")'), false);
         await input('#session-code', 'A1B2C3D4E5'); await click('Next');
         await input('#nickname', 'Alex'); await inspectScreen(`${label}-join`); await screenshot(`${label}-join`);
-        await click('View questions'); await until('!!document.querySelector(".question-preview")');
+        assert.equal(await evaluate('document.querySelector(".join-card").textContent.includes("View questions")'), false);
+        assert.equal(await evaluate('window.__quizcrowdFixture.requests.some(r=>r.command==="preview")'), false);
         await click('Join Game'); await until('!!document.querySelector(".attendee-lobby")');
         await inspectScreen(`${label}-attendee-lobby`);
         await screenshot(`${label}-attendee-lobby`);

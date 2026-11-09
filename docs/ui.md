@@ -9,7 +9,7 @@ read-only; it was not built, executed or modified.
 | Screen | Original design carried forward |
 | --- | --- |
 | Home | Centered two-color wordmark, 72px desktop / 48px mobile title, stacked Join / Host actions, restrained description |
-| Join | Narrow card, back navigation, separate session-code and nickname steps; quiz-URL invitations open the nickname step |
+| Join | Narrow card, back navigation, separate session-code and nickname steps; quiz-URL invitations open the nickname step; no pre-join question-preview action |
 | Author | 672px content area, title card, compact question cards, circular correct-answer selection, two-column options, timer, reordering and add/remove controls |
 | Game settings | Compact modal for late joins and answer reveal, with keyboard focus containment, Escape and focus restoration |
 | Host lobby | 448px card, prominent session code, copy code/link, white QR panel, joined-player chips and start action |
@@ -26,8 +26,9 @@ Reduced-motion preferences disable animations and transitions.
 
 The light theme uses the same geometry, hierarchy and interactions, with pale
 backgrounds, dark text and readable accent variants. Muted text is more opaque
-than the original, and colored answer/podium blocks and the dark theme's pink
-button use dark foregrounds where white would fail text-contrast checks. These
+than the original, and colored answer/podium blocks
+use dark foregrounds where white would fail text-contrast checks. The Host a Quiz
+button uses white text in both themes with a darker pink background for contrast. These
 are deliberate accessibility differences rather than a new layout.
 
 Fabric-specific necessities remain: Entra sign-in/out, a SQL-backed owner
@@ -36,6 +37,11 @@ all-questions public warning and explicit acknowledgement. No original
 password-admin or browser quiz archive was imported. Image upload remains
 outside the existing Fabric data contract; no decorative, nonworking upload
 button is presented. Surveys still have no correctness key or score.
+
+The shared footer reads only **QuizCrowd for Microsoft Fabric**. Removing the
+join screen's question-preview action does not change the public-quiz warning
+or the server's authorized question-projection API. Public questions are not
+made private by hiding a button.
 
 ## Exactly two themes
 
@@ -88,7 +94,7 @@ reload persistence. Contrast checks are scoped text checks, not a complete
 WCAG certification or a screen-reader audit.
 
 The completed local run passed strict typechecks, the production build and
-**47 tests**, plus **29 real-browser scenarios**. It produced **58 screenshots**
+**48 tests**, plus **29 real-browser scenarios**. It produced **58 screenshots**
 and checked **69 screen states** for overflow, accessible control names and
 scoped text contrast, including viewport-centered dialogs and keyboard focus.
 

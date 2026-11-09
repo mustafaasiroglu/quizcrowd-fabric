@@ -9,7 +9,6 @@ import { Icon } from './components/Icon';
 import { ThemeSwitch } from './components/ThemeSwitch';
 
 type Ticket = { id: string; token: string; guest: boolean };
-type Preview = { title: string; mode: string; questions: { text: string; options: string[] }[] };
 type Page = 'home' | 'join' | 'library' | 'admin' | 'author' | 'game';
 const TICKET_KEY = 'quizcrowd-attendee-credential';
 const queryCode = new URLSearchParams(location.search).get('quiz') ?? new URLSearchParams(location.search).get('code') ?? '';
@@ -27,7 +26,6 @@ export default function App() {
   const [draft, setDraft] = useState<Draft>(blankDraft);
   const [editing, setEditing] = useState<string>();
   const [quizzes, setQuizzes] = useState<QuizSummary[]>([]);
-  const [preview, setPreview] = useState<Preview>();
   const [ticket, setTicket] = useState<Ticket>();
   const [hostId, setHostId] = useState<string>();
   const [game, setGame] = useState<GameView>();
@@ -133,7 +131,7 @@ export default function App() {
   }
   function home() {
     sessionStorage.removeItem(TICKET_KEY);
-    setTicket(undefined); setGame(undefined); setHostId(undefined); setPreview(undefined); setError(''); setPage('home');
+    setTicket(undefined); setGame(undefined); setHostId(undefined); setError(''); setPage('home');
     if (connection) void run(() => refresh());
   }
   function create() { setDraft(blankDraft()); setEditing(undefined); setPage('author'); }
@@ -153,7 +151,7 @@ export default function App() {
         <ThemeSwitch />
         {signedIn ? <button className="subtle" disabled={busy} onClick={() => void run(async () => {
           await connection!.client.auth.signOut();
-          setDraft(blankDraft()); setPreview(undefined); setEditing(undefined);
+          setDraft(blankDraft()); setEditing(undefined);
         })}>Sign out</button> : <button className="subtle" disabled={!connection || busy} onClick={signIn}>Sign in with Microsoft Entra</button>}
       </nav>
     </header>
@@ -170,7 +168,7 @@ export default function App() {
           <div className="section-heading page-heading"><button className="icon-button" aria-label="Go back" onClick={() => joinStep === 'nickname' ? setJoinStep('code') : home()}><Icon name="back" /></button><h1>Join Quiz</h1></div>
           {joinStep === 'code' ? <form onSubmit={(e) => { e.preventDefault(); if (code.trim().length >= 4) setJoinStep('nickname'); }}>
             <label htmlFor="session-code">Session Code or Quiz ID</label>
-            <input id="session-code" className="code-input" value={code} onChange={(e) => { setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '')); setPreview(undefined); }} placeholder="ABCDEF" maxLength={36} autoComplete="off" required minLength={4} />
+            <input id="session-code" className="code-input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))} placeholder="ABCDEF" maxLength={36} autoComplete="off" required minLength={4} />
             <button type="submit" className="primary full-width" disabled={code.trim().length < 4}>Next</button>
           </form> : <form onSubmit={(e) => { e.preventDefault(); if (signedIn) void run(() => enter(false)); }}>
             <p className="muted join-code">Code: <strong>{code}</strong></p>
@@ -180,9 +178,7 @@ export default function App() {
             {settings?.anonymousEnabled && <button type="button" className="secondary full-width guest-join" disabled={busy || !nickname.trim()} onClick={() => void run(() => enter(true))}>Join as anonymous guest</button>}
             <p className="muted small">Use a pseudonym. Nicknames and leaderboard scores are visible to other attendees. Your secret attendee credential stays in this tab.</p>
             {!settings?.anonymousEnabled && <p className="muted small">Anonymous attendance is disabled by the publisher.</p>}
-            <button type="button" className="text-button" disabled={busy || !connection} onClick={() => void run(async () => { setPreview(await call<Preview>(connection!, { command: 'preview', id: code.toUpperCase() })); })}>View questions</button>
           </form>}
-          {preview && <article className="question-preview"><h2>{preview.title}</h2>{preview.questions.map((q, i) => <div key={i}><strong>{i + 1}. {q.text}</strong><p className="muted small">{q.options.join(' / ')}</p></div>)}</article>}
         </section>
       </div>}
       {page === 'library' && <div className="library-page page-container">
@@ -231,7 +227,7 @@ export default function App() {
         setGame(await call<GameView>(connection!, { command: 'state', id: game.id }, ticket!.token, ticket!.guest));
       })} />)}
     </main>
-    <footer>QuizCrowd for Microsoft Fabric · Entra-secured authoring · Publisher-controlled guests</footer>
+    <footer>QuizCrowd for Microsoft Fabric</footer>
   </>;
 }
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }

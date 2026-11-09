@@ -183,9 +183,12 @@ Run all applicable [release gates](#release-gates) for the Entra-only baseline.
 There is no "first user becomes admin" rule. Admin/publisher authority comes
 only from `quizcrowd.Administrators`, provisioned by a trusted SQL administrator.
 Any signed-in creator may manage their own quizzes, not global config.
+Deploying the app does not automatically grant this application-admin role.
+Publisher controls is shown only to an authenticated caller whose verified app
+subject is in that table; configuration commands repeat this check on the server.
 
 1. Sign in with the intended administrator account.
-2. Copy the caller subject displayed in **Host your next session**. It is the
+2. Open **Your Quizzes** and expand **Publisher bootstrap identity** to copy the caller subject. It is the
    app's verified opaque session subject, not necessarily an Entra object UUID.
 3. Independently confirm the account through the app's user administration and
    your organization's identity process. Do not trust an unsolicited subject
