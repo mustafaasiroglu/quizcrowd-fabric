@@ -103,9 +103,19 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
   it('retains explicit public acknowledgement and publisher-off disabling', () => {
     const editor = ui.renderEditor();
     expect(editor).toMatch(/disabled=""[^>]*value="public"/);
-    expect(editor).toContain('Only people in my organization can respond');
+    expect(editor).toContain('Only people in my organization');
     expect(ui.renderEditor({ visibility: 'public' }, true)).toContain('all questions and response options accessible to anyone');
     expect(ui.renderEditor({ visibility: 'public' }, true)).toContain('I understand and choose public access.');
+  });
+  it.each([
+    ['quiz', false], ['quiz', true], ['survey', false], ['survey', true],
+  ] as const)('uses the exact ordered audience copy in %s, readonly=%s', (mode, readOnly) => {
+    const editor = ui.renderEditor({ mode }, false, readOnly);
+    expect(editor.indexOf('Only people in my organization')).toBeLessThan(editor.indexOf('Anyone with link'));
+    expect(editor).toContain('Requires sign-in with organization account');
+    expect(editor).toContain('Anonymous response, doesn&#x27;t require sign-in');
+    expect(editor).toMatch(/<input(?=[^>]*name="audience")(?=[^>]*value="internal")(?=[^>]*checked="")[^>]*>/);
+    expect(editor).toMatch(/<input(?=[^>]*name="audience")(?=[^>]*value="public")(?=[^>]*disabled="")[^>]*>/);
   });
   it('uses native keyboard-accessible answer radios and omits them for surveys', () => {
     expect(ui.renderEditor()).toContain('type="radio"');

@@ -41,7 +41,7 @@ DOM changes into the platform page.
 
 | Screen | Behavior |
 | --- | --- |
-| Home | Compact content-width icon/title/description New Live Quiz / New Live Survey / Join with Code actions; matching borders, 12px padding/radius and subtle 1.01 hover scale; Recent Items with Your recent quiz and surveys.; stacked on mobile |
+| Home | Compact equal-width (260px desktop) icon/title/description New Live Quiz / New Live Survey / Join with Code actions, not row-stretched; matching borders, 12px padding/radius and subtle 1.01 hover scale; Recent Items with Your recent quiz and surveys.; stacked on mobile |
 | Join | Narrow card, six-digit numeric string code including leading zeros, separate nickname step; old links resolve; no pre-join preview action |
 | Author | Wide title/questions column with white Light surfaces or dark indigo surfaces; compact question cards, correctness controls, options and reordering |
 | Settings | Right sidebar on desktop, stacked on mobile; Who can respond? first, then answer duration, late joins and answer reveal; no Content Type label/control |
@@ -144,6 +144,10 @@ duplicate preserves the source type. Show Correct Answers stays disabled for sur
 The organization audience requires tenant-bound Entra app access and includes
 authorized directory guests, not anonymous app guests. Public selection still
 requires the global switch, warning acknowledgement and deployment release gate.
+The shared Quiz/Survey editor lists **Only people in my organization** first
+with **Requires sign-in with organization account**, then **Anyone with link**
+with **Anonymous response, doesn't require sign-in**. These shorter labels do
+not change the Entra directory-guest semantics or enable anonymous access.
 
 ## Answer duration
 

@@ -140,7 +140,7 @@ button.text-button { border: 0; padding: 8px 0; color: var(--qc-primary-text); b
 .forms-home .home-actions { flex-direction: row; flex-wrap: wrap; width: auto; max-width: none; gap: 12px; margin-bottom: 32px; }
 .forms-home .primary, .author .primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--forms-accent); color: var(--qc-button-fg); }
 .forms-home .survey-action { background: var(--qc-secondary-button); }
-.forms-home .home-actions > button { flex: 0 1 auto; max-width: 100%; justify-content: flex-start; gap: 12px; min-height: 76px; padding: 12px 16px; text-align: left; border: 1px solid var(--qc-border-strong); border-radius: 12px; }
+.forms-home .home-actions > button { flex: 0 1 260px; max-width: 100%; justify-content: flex-start; gap: 12px; min-height: 76px; padding: 12px 16px; text-align: left; border: 1px solid var(--qc-border-strong); border-radius: 12px; }
 .forms-home .home-actions > button:hover:not(:disabled) { transform: scale(1.01); filter: brightness(.96); border-color: var(--qc-primary-text); }
 .forms-home .home-actions > button:active:not(:disabled) { transform: scale(.99); }
 .home-actions > button > .icon { width: 24px; height: 24px; }

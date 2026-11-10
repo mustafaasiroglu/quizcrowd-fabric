@@ -94,6 +94,18 @@ async function check(name, run) {
   report.checks.push({ name, passed: true });
 }
 async function inspectScreen(name) {
+  const audience = await evaluate(`(() => {
+    const fieldset=document.querySelector(".audience-settings");
+    return fieldset ? [...fieldset.querySelectorAll("label")].map(label=>({
+      value:label.querySelector("input").value,
+      title:label.querySelector("span").firstChild.textContent,
+      description:label.querySelector(".audience-description").textContent,
+    })) : null;
+  })()`);
+  if (audience) assert.deepEqual(audience, [
+    {value:'internal', title:'Only people in my organization', description:'Requires sign-in with organization account'},
+    {value:'public', title:'Anyone with link', description:"Anonymous response, doesn't require sign-in"},
+  ], `${name}: exact audience order and copy`);
   const dialog = await evaluate(`(() => {const e=document.querySelector('dialog[open]');if(!e)return null;const r=e.getBoundingClientRect(),s=getComputedStyle(e);return {center:r.top+r.height/2,expected:innerHeight/2,top:r.top,height:r.height,position:s.position,inset:s.inset,margin:s.margin,scrollY,viewport:visualViewport.height};})()`);
   if (dialog) assert.ok(Math.abs(dialog.center - dialog.expected) <= 1, `${name}: modal must be centered in the actual viewport: ${JSON.stringify(dialog)}`);
   const layout = await evaluate(`({ width:innerWidth, scroll:document.documentElement.scrollWidth, page:document.querySelector('main').className, unnamed:[...document.querySelectorAll('input,textarea,select')].filter(e => e.getBoundingClientRect().width && !e.labels?.length && !e.getAttribute('aria-label')).map(e=>e.outerHTML), themes:[...document.querySelectorAll('[aria-label="Color theme"] button')].map(e=>e.getAttribute('aria-label')) })`);
@@ -214,7 +226,9 @@ try {
           assert.equal(action.radius, '12px');
           assert.equal(action.padding, '12px 16px');
         }
+        assert.equal(new Set(actions.buttons.map(e=>e.width)).size, 1, `${label}: all three action widths match`);
         if (size === 'desktop') {
+          assert.deepEqual(actions.buttons.map(e=>e.width), [260,260,260]);
           assert.equal(new Set(actions.buttons.map(e=>e.top)).size, 1, 'desktop actions align in one row');
           assert.ok(actions.buttons.reduce((sum,e)=>sum+e.width,24) < actions.width * .85, 'desktop actions do not stretch across the row');
         }
