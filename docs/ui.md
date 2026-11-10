@@ -203,7 +203,7 @@ authorized directory guests, not anonymous app guests. Public selection still
 requires the global switch, warning acknowledgement and deployment release gate.
 The shared Quiz/Survey editor lists **Only people in my organization** first
 with **Requires sign-in with organization account**, then **Anyone with link**
-with **Anonymous response, doesn't require sign-in**. These shorter labels do
+with **Anonymous response, no sign-in required.** These shorter labels do
 not change the Entra directory-guest semantics or enable anonymous access.
 When the publisher disables public attendance, the option title becomes
 **Anyone with link (disabled by admin)** and the separate publisher-disabled paragraph

@@ -172,7 +172,7 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(editor).not.toContain('Public attendance is disabled by the publisher.');
     expect(ui.renderEditor({ mode }, true, readOnly)).not.toContain('Anyone with link (disabled by admin)');
     expect(editor).toContain('Requires sign-in with organization account');
-    expect(editor).toContain('Anonymous response, doesn&#x27;t require sign-in');
+    expect(editor).toContain('Anonymous response, no sign-in required.');
     expect(editor).toMatch(/<input(?=[^>]*name="audience")(?=[^>]*value="internal")(?=[^>]*checked="")[^>]*>/);
     expect(editor).toMatch(/<input(?=[^>]*name="audience")(?=[^>]*value="public")(?=[^>]*disabled="")[^>]*>/);
   });

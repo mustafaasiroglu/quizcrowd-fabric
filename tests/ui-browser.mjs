@@ -167,7 +167,7 @@ async function inspectScreen(name) {
   })()`);
   if (audience) assert.deepEqual(audience.options, [
     {value:'internal', title:'Only people in my organization', description:'Requires sign-in with organization account'},
-    {value:'public', title:audience.disabled?'Anyone with link (disabled by admin)':'Anyone with link', description:"Anonymous response, doesn't require sign-in"},
+    {value:'public', title:audience.disabled?'Anyone with link (disabled by admin)':'Anyone with link', description:'Anonymous response, no sign-in required.'},
   ], `${name}: exact audience order and copy`);
   const editor = await evaluate(`(() => {
     const root=document.querySelector('.author');if(!root)return null;
