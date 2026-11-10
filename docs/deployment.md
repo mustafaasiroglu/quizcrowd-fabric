@@ -521,6 +521,63 @@ Keep a record of actual tenant, region, SDK/CLI versions, policy output and
 observed results in your private release process. Do not publish tokens or
 attendee data as test evidence.
 
+## November 10, 2026 validation
+
+Application source
+[`8d4605d`](https://github.com/mustafaasiroglu/quizcrowd-fabric/commit/8d4605d2baa04274b6d8f174debe911e16b22dba)
+was pushed to public `main`, then its Functions and frontend were published to
+the already-selected test app. No database migration, new resource, capacity
+change, tenant-wide policy change or public-hosting change was made. Function
+metadata readback reached `Complete`; the frontend deployment returned its
+deployment identifier. Existing runtime security settings were unchanged.
+
+| Evidence | Observed outcome |
+| --- | --- |
+| Strict local validation | 179 tests in 11 files, strict typechecks and production build passed on Node 24 |
+| Isolated Edge browser | 120 scenarios passed; 330 captures and 345 scoped contrast/layout checks, across light/dark and desktop/mobile |
+| Published-runtime SDK | 25 recorded check groups; 95 HTTP 200 exchanges, including expected application-level denials |
+| Live Quiz | Create/edit/revert/readback, fresh authenticated session persistence, private duplicate/delete, host/attendee separation, stale-version denial, open `wait_all` secrecy, read-only enforcement and final scores |
+| Live concurrency | Two concurrent identical submissions accepted with one score/streak award; conflicting duplicate rejected; incorrect next answer added no points and reset streak |
+| Live late joining | An owner making a new attendee join after start received the normal late-join rejection |
+| Live Survey | Single/multiple/Other/free-text responses persisted; owner summaries and written pages matched; completed results survived a fresh SDK session |
+| Survey attendee privacy | Actual `question`, `reveal` and `finished` projections omitted distributions, summaries, rankings and others' text; own acknowledgement remained. Local negative contracts additionally cover guest/nonowner and leaderboard cases |
+| Cleanup/readback | All five dedicated temporary items deleted. Original five SQL game-document hashes and administrator assignments unchanged |
+| Public CI | [Template checks passed](https://github.com/mustafaasiroglu/quizcrowd-fabric/actions/runs/42896668873), including clean-install checks and the advisory gate |
+
+These are different kinds of evidence. The SDK used the documented delegated
+Entra exchange and caller-scoped DAB verification, not browser-token extraction,
+identity impersonation or direct SQL writes. One real Entra account exercised
+both its owner and separately credentialed attendee paths. This is not a
+multi-account authorization certification, capacity/load test or a complete
+live browser click-through. The shared portal could render the signed-in app,
+but the available browser actions could not target its cross-origin app frame.
+The [README gallery](../README.md#sample-screens) is explicitly synthetic local
+browser rendering, not evidence of live Fabric authorization.
+
+### Anonymous outcome: still blocked
+
+The normal authorized administration Function read the prior
+`AnonymousEnabled=false`, `GuestEpoch=2`, then enabled the switch
+(`true`, epoch 3). A newly created Public test quiz with acknowledgement was
+used for a fresh unsigned SDK preview against the published Function gateway.
+It returned **HTTP 403**:
+
+```text
+Anonymous access is not allowed for function invocation.
+```
+
+The flag was restored through the same authorized Function to **false,
+epoch 4**, preserving revocation semantics rather than resetting the generation.
+The two switch changes used the normal audited configuration path. Protected
+hosting and tenant policies stayed unchanged; no public CRUD, SQL credential or
+authentication workaround was introduced. Anonymous attendance is therefore
+**not live-verified or enabled** in this test deployment. The anonymous lifecycle,
+guest isolation and kill-switch release gates remain required for any publisher
+whose gateway permits anonymous execution.
+
+Actual deployment identifiers and credential-free detailed runtime evidence
+remain in the private release record, not a committed environment registry.
+
 ## Troubleshooting
 
 | Symptom | Check |

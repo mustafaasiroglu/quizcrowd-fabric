@@ -6,9 +6,10 @@ publisher-controlled anonymous attendance, and application data persisted in
 
 > **Preview implementation template, not a production-certified deployment.**
 > Local typechecks, game/authorization tests and the real Fabric Functions
-> bundler are exercised. An Entra-only test deployment passed 30 actual
-> SDK/SQL/UI checks, including administrator bootstrap, quiz/survey flows,
-> concurrent submissions, QR hosting and persistence across a portal reload.
+> bundler are exercised. The latest validation passed 179 local tests,
+> 120 real-browser scenarios with isolated fixtures, and 25 recorded live
+> SDK check groups against an existing Fabric deployment. See the
+> [validation scope and limits](docs/deployment.md#november-10-2026-validation).
 > In particular, anonymous Function invocation with app-identity SQL access
 > must be confirmed in your tenant before enabling public attendance.
 > A live public-hosting experiment served the frontend anonymously, but
@@ -157,7 +158,8 @@ accessibility differences, local browser tests and exact capture paths.
 The implementation uses the actual **Rayfin 1.36.2** packages and CLI, with a
 committed npm lockfile. Tests with serialized in-memory *test doubles* are not
 proof of live DAB authorization or SQL locking. The offline deployment bundle
-is approximately 10.3 MB, below the documented 30 MB Function ZIP ceiling.
+contained 9.8 MB of bundled source (2.3 MB compressed) in the latest release,
+below the documented 30 MB Function ZIP ceiling.
 
 The UI and server support two to ten normal choices per question. Surveys also
 support Other and text-only questions. Limits are 40 questions, 500 attendees per game, 5–120-second questions,
