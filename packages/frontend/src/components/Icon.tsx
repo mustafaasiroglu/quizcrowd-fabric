@@ -1,4 +1,4 @@
-type Name = 'back' | 'copy' | 'check' | 'close' | 'up' | 'down' | 'trash' | 'settings' | 'adjust' | 'clock' | 'sun' | 'moon' | 'users' | 'user' | 'more' | 'quiz' | 'survey' | 'join' | 'plus' | 'save' | 'play' | 'open' | 'logout' | 'calendar' | 'questions' | 'responses';
+type Name = 'back' | 'copy' | 'check' | 'close' | 'up' | 'down' | 'trash' | 'settings' | 'adjust' | 'clock' | 'sun' | 'moon' | 'users' | 'user' | 'more' | 'quiz' | 'survey' | 'join' | 'plus' | 'save' | 'play' | 'open' | 'logout' | 'calendar' | 'questions' | 'responses' | 'lock';
 const paths: Record<Name, string> = {
   back: 'M15 19l-7-7 7-7',
   copy: 'M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z',
@@ -26,6 +26,7 @@ const paths: Record<Name, string> = {
   calendar: 'M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2',
   questions: 'M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8M13 3h8v8h-8V3M7 9h2m-2 4h6m-6 4h6',
   responses: 'M21 11a8 8 0 0 1-8 8H5l-4 3V11a8 8 0 0 1 8-8h4a8 8 0 0 1 8 8M7 11h.01M11 11h.01M15 11h.01',
+  lock: 'M7 10V7a5 5 0 0 1 10 0v3M6 10h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2m6 5v3',
 };
 export function Icon({ name }: { name: Name }) {
   return <svg className="icon" aria-hidden="true" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d={paths[name]} /></svg>;

@@ -172,7 +172,10 @@ without showing this started-session action. Attend navigates to `/join/?code=<s
 saved canonical code; it does not join, start the session or reuse host identity
 as an attendee credential. The normal nickname, Entra/guest and server audience
 checks still run. A finished session, or a started session with late joining
-disabled, shows a disabled action with its reason. These are snapshot-based UI
+disabled, shows a disabled action with its reason in its accessible description.
+The read-only notice appears once below the header as a muted, small inline
+status with a leading lock icon, not a separate bordered box; the form is
+associated with that status. These are snapshot-based UI
 hints: the server rechecks current state when a caller actually joins.
 
 Completed Survey owner views also offer **View Results**, navigating directly
@@ -230,7 +233,7 @@ A subtle transparent brand tint reaches the lower-right corner (5% Light,
 8% Dark); most of each surface stays neutral. Equal compact 280px geometry
 and 1.01 hover scale are retained. The Survey description is
 **Collect live feedback without scoring.** Quiz description is
-**Multiple choice quiz with scoring.**
+**Multiple choice quiz with real-time leaderboard.**
 Game-screen purple button fills are slightly darker for text contrast.
 Deletion icons are neutral normally and red on hover/focus.
 

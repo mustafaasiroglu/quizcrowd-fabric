@@ -68,12 +68,15 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
       expect(owner).toContain('Attend</button>');
       expect(owner).toContain('Open Lobby</button>');
       expect(owner).toContain('class="author-session-actions"');
+      expect(owner).toContain('id="session-readonly-status" class="muted small readonly-notice" role="status"><svg');
+      expect(owner).toContain('aria-describedby="session-readonly-status"');
+      expect(owner.match(/Read-only: this session has started or has responses\./g)).toHaveLength(1);
       expect(ui.renderEditor({ mode }, false, false, true, {})).not.toContain('Attend</button>');
       expect(ui.renderEditor({ mode }, false, true, true)).not.toContain('Attend</button>');
       for (const joinUnavailableReason of ['This session has finished.', 'This session does not allow late joins.']) {
         const closed = ui.renderEditor({ mode }, false, true, true, { joinUnavailableReason });
         expect(closed).toContain('disabled="" aria-describedby="attendee-join-reason"');
-        expect(closed).toContain(`id="attendee-join-reason" class="muted small attendee-join-reason">${joinUnavailableReason}`);
+        expect(closed).toContain(`id="attendee-join-reason" class="sr-only">${joinUnavailableReason}`);
         expect(closed).toContain('class="primary compact-lobby-action"');
       }
       expect(ui.renderEditor({ mode }, false, true, true, { busy: true })).toContain('class="subtle" disabled=""');

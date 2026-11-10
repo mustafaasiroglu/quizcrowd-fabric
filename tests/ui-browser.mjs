@@ -485,6 +485,11 @@ try {
         await navigate(`host/item/?gameId=${id}&example=response-locked`);await until('!!document.querySelector(".readonly-notice")');
         assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Open Lobby');
         assert.equal(await evaluate('document.querySelector(".author-content").disabled'),true);
+        assert.equal(await evaluate('document.querySelector(".readonly-notice").textContent'),'Read-only: this session has started or has responses.');
+        assert.equal(await evaluate('document.querySelectorAll(".readonly-notice").length'),1);
+        assert.equal(await evaluate('document.querySelector(".readonly-notice").firstElementChild.tagName.toLowerCase()'),'svg');
+        assert.equal(await evaluate('document.querySelector("#session-author-form").getAttribute("aria-describedby")'),'session-readonly-status');
+        assert.deepEqual(await evaluate('(() => {const s=getComputedStyle(document.querySelector(".readonly-notice"));return [s.borderTopWidth,s.padding,s.backgroundColor];})()'),['0px','0px','rgba(0, 0, 0, 0)']);
         await inspectScreen(`${label}-response-locked`);await screenshot(`${label}-response-locked`);
         await cdp.call('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false},session);
       });
@@ -800,12 +805,15 @@ try {
         await until('!!document.querySelector(".readonly-notice")');
         assert.equal(await evaluate('document.querySelector(".author-session-actions .subtle").disabled'),true);
         assert.equal(await evaluate('document.querySelector("#attendee-join-reason").textContent'),'This session does not allow late joins.');
+        assert.equal(await evaluate('document.querySelector("#attendee-join-reason").className'),'sr-only');
+        assert.equal(await evaluate('document.querySelector(".author-session-actions .subtle").getAttribute("aria-describedby")'),'attendee-join-reason');
         await inspectScreen(`${theme}-${size}-owner-late-join-disabled`);await screenshot(`${theme}-${size}-owner-late-join-disabled`);
         await evaluate('window.__quizcrowdFixture.phase("finished")');await pointerClick('document.querySelector(".small-brand")');
         await until('!!document.querySelector(".session-open")');await pointerClick('document.querySelector(".session-open")');
         await until('!!document.querySelector("#attendee-join-reason")');
         assert.equal(await evaluate('document.querySelector(".author-session-actions .subtle").disabled'),true);
         assert.equal(await evaluate('document.querySelector("#attendee-join-reason").textContent'),'This session has finished.');
+        assert.equal(await evaluate('document.querySelector("#attendee-join-reason").className'),'sr-only');
         assert.equal(await evaluate('document.querySelector(".author-session-actions .primary").disabled'),false);
         await inspectScreen(`${theme}-${size}-owner-finished`);await screenshot(`${theme}-${size}-owner-finished`);
         await navigate(`host/item/?gameId=${id}&example=quiz-ten`);await until('!!document.querySelector(".readonly-notice")');
@@ -949,7 +957,7 @@ try {
       await check(`${label}: home layout, theme and accessibility`, async () => {
         assert.equal(await evaluate('document.documentElement.dataset.theme'), theme);
         assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions button")].map(e=>e.getAttribute("aria-label"))'), ['New Live Quiz','New Live Survey','Join with Code']);
-        assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions .action-description")].map(e=>e.textContent)'), ['Multiple choice quiz with scoring.','Collect live feedback without scoring.','Enter a quiz or survey.']);
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions .action-description")].map(e=>e.textContent)'), ['Multiple choice quiz with real-time leaderboard.','Collect live feedback without scoring.','Enter a quiz or survey.']);
         const actions = await evaluate(`(() => {
           const parent=document.querySelector(".home-actions");
           return {width:parent.clientWidth,buttons:[...parent.children].map(e=>{

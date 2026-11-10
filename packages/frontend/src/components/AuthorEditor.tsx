@@ -83,9 +83,9 @@ export function AuthorEditor({ draft, onChange, editing, dirty = false, anonymou
           : onHost && <button type="button" className="primary compact-lobby-action" disabled={busy} onClick={onHost}><Icon name="play" />Open Lobby</button>}
       </div>}
     </div>
-    {readOnly && onJoin && joinUnavailableReason && <p id="attendee-join-reason" className="muted small attendee-join-reason">{joinUnavailableReason}</p>}
-    {readOnly && <p className="readonly-notice" role="status">Read-only: this session has started or has responses.</p>}
-    <form id="session-author-form" className="author-layout" onSubmit={(event) => { event.preventDefault(); if (!readOnly && !busy) { if (needsSave) onSave(); else onHost?.(); } }}>
+    {readOnly && onJoin && joinUnavailableReason && <span id="attendee-join-reason" className="sr-only">{joinUnavailableReason}</span>}
+    {readOnly && <p id="session-readonly-status" className="muted small readonly-notice" role="status"><Icon name="lock" /><span>Read-only: this session has started or has responses.</span></p>}
+    <form id="session-author-form" className="author-layout" aria-describedby={readOnly ? 'session-readonly-status' : undefined} onSubmit={(event) => { event.preventDefault(); if (!readOnly && !busy) { if (needsSave) onSave(); else onHost?.(); } }}>
       <fieldset className="author-content" disabled={readOnly || busy}>
         <legend className="sr-only">Session content</legend>
         <section className="card title-card"><label htmlFor="quiz-title">Title</label><input id="quiz-title" placeholder={draft.mode === 'quiz' ? 'Untitled live quiz' : 'Untitled live survey'} required maxLength={MAX_TITLE_LENGTH} value={draft.title} onChange={(e) => onChange({ ...draft, title: e.target.value })} /></section>
