@@ -11,7 +11,8 @@ const game: GameView = {
 };
 let ui: {
   renderGame(game: GameView, host?: boolean): string;
-  renderEditor(draft?: Partial<Draft>, anonymousEnabled?: boolean, readOnly?: boolean, editing?: boolean, session?: { joinUnavailableReason?: string; busy?: boolean; dirty?: boolean }): string;
+  renderEditor(draft?: Partial<Draft>, anonymousEnabled?: boolean, readOnly?: boolean, editing?: boolean, session?: { joinUnavailableReason?: string; busy?: boolean; dirty?: boolean; results?: boolean }): string;
+  renderLibrary(loadState: 'loading' | 'ready' | 'error'): string;
   sameDraftContent(left: Draft, right: Draft): boolean;
   removeOption(question: Question, index: number): Question;
   renderIcon(): string;
@@ -34,13 +35,15 @@ beforeAll(async () => {
         import { GameScreen } from './src/components/GameScreen';
         import { Icon } from './src/components/Icon';
         import { Brand } from './src/components/Brand';
+        import { SessionLibrary } from './src/components/SessionLibrary';
         export { removeOption, sameDraftContent };
         const noop = () => {};
         export function renderIcon() { return renderToStaticMarkup(h(Icon, {name:'settings'})); }
         export function renderBrand() { return renderToStaticMarkup(h(Brand, {onHome:noop})); }
         export function renderEditor(patch = {}, anonymousEnabled = false, readOnly = false, editing = false, session) {
-          return renderToStaticMarkup(h(AuthorEditor, {draft:{...blankDraft(),...patch},onChange:noop,editing,dirty:session?.dirty ?? false,anonymousEnabled,readOnly,busy:session?.busy ?? false,onSave:noop,onBack:noop,onHost:session ? noop : undefined,onJoin:session ? noop : undefined,joinUnavailableReason:session?.joinUnavailableReason}));
+          return renderToStaticMarkup(h(AuthorEditor, {draft:{...blankDraft(),...patch},onChange:noop,editing,dirty:session?.dirty ?? false,anonymousEnabled,readOnly,busy:session?.busy ?? false,onSave:noop,onBack:noop,onHost:session ? noop : undefined,onJoin:session ? noop : undefined,onResults:session?.results ? noop : undefined,joinUnavailableReason:session?.joinUnavailableReason}));
         }
+        export function renderLibrary(loadState) { return renderToStaticMarkup(h(SessionLibrary,{quizzes:[],loadState,busy:false,onOpen:noop,onDuplicate:noop,onDelete:noop})); }
         export function renderGame(game, host = false) {
           return renderToStaticMarkup(h(GameScreen,{game,host,guest:false,nickname:'Alex',joinUrl:'https://test.invalid/?quiz=game',busy:false,onControl:noop,onAnswer:noop,onSurveyAnswer:noop,onHome:noop,onCopyError:noop}));
         }
@@ -71,7 +74,7 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
         const closed = ui.renderEditor({ mode }, false, true, true, { joinUnavailableReason });
         expect(closed).toContain('disabled="" aria-describedby="attendee-join-reason"');
         expect(closed).toContain(`id="attendee-join-reason" class="muted small attendee-join-reason">${joinUnavailableReason}`);
-        expect(closed).toContain('class="primary"');
+        expect(closed).toContain('class="primary compact-lobby-action"');
       }
       expect(ui.renderEditor({ mode }, false, true, true, { busy: true })).toContain('class="subtle" disabled=""');
     }
@@ -149,7 +152,8 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
   it('renders host QR invitation only in the lobby and disables empty-game start', () => {
     const lobby = ui.renderGame({ ...game, players: [] }, true);
     expect(lobby).toContain('<h1>Source parity quiz</h1>');
-    expect(lobby).toContain('Share this code with attendees');
+    expect(lobby).toContain('Scan QR code or visit link to join...');
+    expect(lobby).toContain('Tip: Press F11 to make full screen');
     expect(lobby).toContain('0 attendees joined');
     expect(lobby.indexOf('class="qr-container"')).toBeLessThan(lobby.indexOf('class="code-panel"'));
     expect(lobby).not.toContain('Present lobby');
@@ -256,7 +260,7 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
   it.each([[false, false], [true, false], [true, true]])('keeps sentence-case quiz settings and post-option help, editing=%s readonly=%s', (editing, readOnly) => {
     const questions = [{ text: 'Question', options: ['A', 'B', 'C'], correctIndex: 0, duration: 20 }];
     const quiz = ui.renderEditor({ questions }, false, readOnly, editing);
-    for (const text of ['Allow late joins?', 'Don&#x27;t allow late join', 'Allow join after game start', 'Show correct answers?', 'Wait for all users', 'Show after user response', 'Never show']) {
+    for (const text of ['Allow late joins?', 'Don&#x27;t allow late join', 'Allow join after session start', 'Show correct answers?', 'Wait for all users', 'Show after user response', 'Never show']) {
       expect(quiz).toContain(text);
     }
     expect(quiz).toContain('answer-reveal-settings');
@@ -295,13 +299,26 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(clean).toContain('Open Lobby</button>');
     expect(clean).not.toContain('type="submit"');
     const dirty = ui.renderEditor({}, false, false, true, { dirty: true });
-    expect(dirty).toContain('Save &amp; Open</button>');
-    expect(dirty).not.toContain('Open Lobby</button>');
+    expect(dirty).toContain('Save &amp; Open Lobby</button>');
+    expect(dirty).not.toContain('</svg>Open Lobby</button>');
     expect(dirty.match(/type="submit"/g)).toHaveLength(1);
     const locked = ui.renderEditor({}, false, true, true, { dirty: true });
     expect(locked).toContain('Open Lobby</button>');
     expect(locked).not.toContain('Save &amp; Open');
     expect(locked).not.toContain('type="submit"');
+    expect(ui.renderEditor({ mode: 'survey' }, false, true, true, { results: true })).toContain('View Results</button>');
+  });
+  it('only shows an empty recent list after successful loading, not during loading or failure', () => {
+    const loading = ui.renderLibrary('loading'), ready = ui.renderLibrary('ready'), failed = ui.renderLibrary('error');
+    expect(loading).toContain('aria-busy="true"');
+    expect(loading).toContain('Loading recent items...');
+    expect(loading.match(/class="card session-placeholder"/g)).toHaveLength(3);
+    expect(loading).not.toContain('No recent items');
+    expect(ready).toContain('No recent items');
+    expect(ready).not.toContain('session-placeholder');
+    expect(failed).toContain('Recent items could not be loaded.');
+    expect(failed).not.toContain('No recent items');
+    expect(failed).not.toContain('session-placeholder');
   });
   it('compares persisted draft content independently of object identity, field order and legacy metadata', () => {
     const saved: Draft = { title: 'Saved', mode: 'survey', visibility: 'internal', publicAcknowledged: false,
@@ -372,7 +389,7 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(quiz).not.toContain('class="question-type ');
     const survey = ui.renderEditor({ mode: 'survey' });
     expect(survey).toContain('class="question-type question-popover-trigger" value="single"');
-    expect(survey).toMatch(/class="question-type question-popover-trigger"[^>]*><svg[^]*?<\/svg><span>Single Select<\/span>/);
+    expect(survey).toMatch(/class="question-type question-popover-trigger"[^>]*><span>Single Select<\/span><svg[^]*?<\/svg><\/button>/);
     expect(survey).not.toContain('<select class="question-type"');
     expect(survey).not.toContain('question-settings');
     expect(survey).not.toContain('name="survey-type-0" type="radio"');

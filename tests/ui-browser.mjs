@@ -224,7 +224,7 @@ async function inspectScreen(name) {
   })()`);
   if (editor) {
     assert.deepEqual(editor.legends, ['Who can respond?', 'Answer duration', 'Allow late joins?', ...(editor.survey ? [] : ['Show correct answers?'])]);
-    assert.deepEqual(editor.late, ["Don't allow late join", 'Allow join after game start']);
+    assert.deepEqual(editor.late, ["Don't allow late join", 'Allow join after session start']);
     assert.deepEqual(editor.reveal, editor.survey ? [] : ['Wait for all users', 'Show after user response', 'Never show']);
     assert.equal(editor.emptyGroups, 0);
     for (const hint of editor.hints) {
@@ -327,12 +327,102 @@ try {
     assert.equal(await evaluate('document.querySelector(".home-actions .quiz-action").disabled'), false);
     await evaluate('window.__quizcrowdFixture.release()');
   });
+  await check('lobby fullscreen tip detects browser fullscreen and Fullscreen API', async () => {
+    await navigate('host/lobby/?gameId=11111111-2222-4333-8444-555555555555&example=quiz-ten');
+    await until('!!document.querySelector(".fullscreen-tip")');
+    assert.equal(await evaluate('document.querySelector(".fullscreen-tip").textContent'),'Tip: Press F11 to make full screen');
+    const {windowId,bounds}=await cdp.call('Browser.getWindowForTarget',{targetId:target.targetId});
+    try {
+      await cdp.call('Browser.setWindowBounds',{windowId,bounds:{windowState:'fullscreen'}});
+      await until('matchMedia("(display-mode: fullscreen)").matches');
+      assert.equal(await evaluate('document.fullscreenElement===null'),true);
+      await until('document.querySelector(".fullscreen-tip")===null');
+    } finally {
+      await cdp.call('Browser.setWindowBounds',{windowId,bounds:{windowState:'normal'}});
+      await cdp.call('Browser.setWindowBounds',{windowId,bounds:{left:bounds.left,top:bounds.top,width:bounds.width,height:bounds.height}});
+    }
+    await until('!!document.querySelector(".fullscreen-tip")');
+    const requested=await cdp.call('Runtime.evaluate',{expression:'document.documentElement.requestFullscreen()',userGesture:true,awaitPromise:true,returnByValue:true},session);
+    assert.equal(requested.exceptionDetails,undefined);
+    await until('!!document.fullscreenElement && document.querySelector(".fullscreen-tip")===null');
+    await evaluate('document.exitFullscreen()');
+    await until('!!document.querySelector(".fullscreen-tip")');
+  });
 
   for (const [size, width, height] of [['desktop', 1440, 1000], ['mobile', 390, 844]]) {
     await cdp.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false }, session);
     for (const theme of ['dark', 'light']) {
       await navigate('?fixture=admin');
       if (size === 'desktop' && theme === 'dark') await check('light is default even with a dark system preference', async () => assert.equal(await evaluate('document.documentElement.dataset.theme'), 'light'));
+      await check(`${theme}-${size}: three home actions focus the destination first field once`, async () => {
+        for(const [action,field,next] of [['New Live Quiz','#quiz-title','#question-0'],['New Live Survey','#quiz-title','#question-0'],['Join with Code','#session-code','#session-code']]){
+          await navigate();await click(theme==='dark'?'Dark':'Light');await click(action);
+          await until(`document.activeElement===document.querySelector(${JSON.stringify(field)})`);
+          await input(field,action==='Join with Code'?'000123':'Focused title');
+          await evaluate(`document.querySelector(${JSON.stringify(next)}).focus()`);
+          await pause(1700);
+          assert.equal(await evaluate(`document.activeElement===document.querySelector(${JSON.stringify(next)})`),true);
+          assert.equal(await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),action==='Join with Code'?'000123':'Focused title');
+        }
+      });
+      await check(`${theme}-${size}: recent items loading, loaded empty, error and stale refresh`, async () => {
+        const label=`${theme}-${size}-recent-states`;
+        await navigate('?library=loading');await click(theme==='dark'?'Dark':'Light');
+        await until('!!document.querySelector(".library-loading")');
+        assert.equal(await evaluate('document.querySelectorAll(".session-placeholder").length'),3);
+        assert.equal(await evaluate('document.querySelector(".empty-library")===null'),true);
+        assert.equal(await evaluate('document.querySelector(".recent-sessions").getAttribute("aria-busy")'),'true');
+        const recentGap=await evaluate('document.querySelector(".recent-sessions").getBoundingClientRect().top-document.querySelector(".home-actions").getBoundingClientRect().bottom');
+        assert.ok(Math.abs(recentGap-(size==='mobile'?40:48))<1,`recent top spacing ${recentGap}`);
+        assert.ok(await evaluate('[...document.querySelectorAll(".home-action")].every(e=>{const i=e.querySelector("svg").getBoundingClientRect(),t=e.querySelector("span").getBoundingClientRect();return t.left-i.right>=16})'));
+        await inspectScreen(`${label}-loading`);await screenshot(`${label}-loading`);
+        await evaluate('window.__quizcrowdFixture.empty();window.__quizcrowdFixture.release()');
+        await until('document.querySelector(".empty-library")?.textContent==="No recent items"');
+        await inspectScreen(`${label}-empty`);await screenshot(`${label}-empty`);
+        await cdp.call('Page.reload',{},session);await until('document.querySelector(".empty-library")?.textContent==="No recent items"');
+        await navigate('?library=loading');await evaluate('window.__oldListRelease=window.__quizcrowdFixture.release');
+        await click('Join with Code');
+        await evaluate('window.__quizcrowdFixture.defer("list")');
+        await pointerClick('document.querySelector(\'[aria-label="Go back"]\')');
+        await until('!!document.querySelector(".library-loading")');
+        await evaluate('window.__quizcrowdFixture.empty();window.__quizcrowdFixture.release()');
+        await until('document.querySelector(".empty-library")?.textContent==="No recent items"');
+        await evaluate('window.__oldListRelease("Stale list failure")');await pause(100);
+        assert.equal(await evaluate('document.querySelector("[role=alert]")===null'),true);
+        assert.equal(await evaluate('document.querySelector(".empty-library").textContent'),'No recent items');
+        await navigate('?library=loading');await evaluate('window.__quizcrowdFixture.release("List unavailable")');
+        await until('document.querySelector("[role=alert]")?.textContent.includes("List unavailable")');
+        assert.equal(await evaluate('document.querySelector(".empty-library")===null'),true);
+        assert.equal(await evaluate('document.querySelector(".library-loading")===null'),true);
+        assert.ok(await evaluate('document.querySelector(".recent-sessions").textContent.includes("Recent items could not be loaded.")'));
+        await inspectScreen(`${label}-error`);await screenshot(`${label}-error`);
+      });
+      await check(`${theme}-${size}: completed survey View Results uses existing persisted host route`, async () => {
+        const id='11111111-2222-4333-8444-555555555555',label=`${theme}-${size}-completed-survey`;
+        await navigate(`host/item/?gameId=${id}&example=survey-results`);await click(theme==='dark'?'Dark':'Light');
+        await until('!!document.querySelector(".author-session-actions .secondary")');
+        assert.equal(await evaluate('document.querySelector(".author-session-actions .secondary").textContent'),'View Results');
+        assert.equal(await evaluate('document.querySelector(".author button[type=submit]")===null'),true);
+        const compact=await evaluate('[".author-session-actions .subtle",".author-session-actions .primary"].map(s=>{const e=document.querySelector(s),c=getComputedStyle(e);return {height:e.getBoundingClientRect().height,padding:c.padding,font:c.fontSize}})');
+        assert.deepEqual(compact[0],compact[1]);
+        await inspectScreen(`${label}-header`);await screenshot(`${label}-header`);
+        await click('View Results');await until('!!document.querySelector(".finished-screen")');
+        assert.equal(await evaluate('location.pathname+location.search'),`/host/game/?gameId=${id}`);
+        assert.equal(await evaluate('document.querySelectorAll(".survey-result").length'),3);
+        assert.equal(await evaluate('window.__quizcrowdFixture.requests.some(r=>["join","create","control","answer"].includes(r.command))'),false);
+        assert.equal(await evaluate('sessionStorage.getItem("quizcrowd-attendee-credential")'),null);
+        await inspectScreen(`${label}-results`);await screenshot(`${label}-results`);
+        await cdp.call('Page.reload',{},session);await until('document.querySelectorAll(".survey-result").length===3');
+        await evaluate('history.back()');await until('!!document.querySelector(".author-session-actions .secondary")');
+        await evaluate('history.forward()');await until('!!document.querySelector(".finished-screen")');
+        assert.equal(await evaluate('document.body.textContent.includes("Private fixture text")'),false);
+        await navigate(`host/item/?gameId=${id}&example=survey-results&owner=other`);
+        await until('document.querySelector("[role=alert]")?.textContent.includes("ownership required")');
+        assert.equal(await evaluate('document.querySelector(".author-session-actions")===null'),true);
+        await navigate(`host/game/?gameId=${id}&example=survey-results&owner=other`);
+        await until('document.querySelector("[role=alert]")?.textContent.includes("ownership required")');
+        assert.equal(await evaluate('document.querySelector(".survey-result")===null'),true);
+      });
       await check(`${theme}-${size}: original tile brand at compact sizes`, async () => {
         await navigate(); await click(theme === 'dark' ? 'Dark' : 'Light');
         const mark = await evaluate(`(() => {
@@ -366,12 +456,12 @@ try {
         assert.equal(await evaluate('window.__quizcrowdFixture.requests.filter(r=>r.command==="edit"&&r.draft).length'),0);
         await evaluate('history.back()');await until('!!document.querySelector("#quiz-title")');
         await input('#quiz-title',`${title} revised`);
-        assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Save & Open');
+        assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Save & Open Lobby');
         assert.equal(await evaluate('document.querySelector(".author button[type=submit]").form.id'),'session-author-form');
         await input('#quiz-title',title);
         assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Open Lobby');
         await pointerClick('document.querySelector(\'input[name="late-join"][value="allow"]\')');
-        assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Save & Open');
+        assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Save & Open Lobby');
         await pointerClick('document.querySelector(\'input[name="late-join"][value="deny"]\')');
         assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Open Lobby');
         await input('#question-0','');
@@ -385,7 +475,7 @@ try {
         await evaluate('window.__quizcrowdFixture.release("Synthetic save failure")');
         await until('document.querySelector("[role=alert]")?.textContent.includes("Synthetic save failure")');
         assert.equal(await evaluate('document.querySelector("#question-0").value'),'Revised question');
-        assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Save & Open');
+        assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Save & Open Lobby');
         assert.equal(await evaluate('location.pathname'),'/host/item/');
         await inspectScreen(`${label}-failed-save`);await screenshot(`${label}-failed-save`);
         await submitAuthor();await until('!!document.querySelector(".host-lobby")');
@@ -518,7 +608,9 @@ try {
             assert.equal(await evaluate('getComputedStyle(document.querySelector(".question-type")).color'),await evaluate('getComputedStyle(document.querySelector(".brand-wordmark > span")).color'));
             assert.equal(await evaluate('getComputedStyle(document.querySelector(".question-type svg")).stroke'),await evaluate('getComputedStyle(document.querySelector(".question-type")).color'));
             await cdp.call('CSS.forcePseudoState',{nodeId,forcedPseudoClasses:[]},session);
-            assert.equal(await evaluate('document.querySelector(".question-type").firstElementChild.tagName.toLowerCase()'),'svg');
+            assert.equal(await evaluate('document.querySelector(".question-type").lastElementChild.tagName.toLowerCase()'),'svg');
+            assert.equal(await evaluate('document.querySelector(".question-type").firstElementChild.tagName.toLowerCase()'),'span');
+            assert.equal(await evaluate('document.querySelector(".question-type path").getAttribute("d")'),'M19 9l-7 7-7-7');
             await evaluate('document.querySelector(".question-duration").focus()');
             await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9},session);
             await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9},session);
@@ -748,7 +840,7 @@ try {
           assert.equal(await evaluate('document.querySelector(".host-lobby h1").textContent'),`Ten-choice ${mode}`);
           assert.equal(await evaluate('document.querySelector(".host-lobby .game-context")===null'),true);
           assertJoinChecksum(await evaluate('document.querySelector(".session-code strong").textContent'));
-          assert.ok(await evaluate('document.querySelector(".host-lobby").textContent.includes("Share this code with attendees")'));
+          assert.ok(await evaluate('document.querySelector(".host-lobby").textContent.includes("Scan QR code or visit link to join...")'));
           assert.ok(await evaluate('document.querySelector(".host-lobby").textContent.includes("4 attendees joined")'));
           await assertFilledForeground('.host-lobby .primary');
           await inspectScreen(`${label}-lobby`);await screenshot(`${label}-lobby`);
@@ -857,7 +949,7 @@ try {
       await check(`${label}: home layout, theme and accessibility`, async () => {
         assert.equal(await evaluate('document.documentElement.dataset.theme'), theme);
         assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions button")].map(e=>e.getAttribute("aria-label"))'), ['New Live Quiz','New Live Survey','Join with Code']);
-        assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions .action-description")].map(e=>e.textContent)'), ['Create a quiz and host it live.','Collect feedback without scoring.','Enter a quiz or survey.']);
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions .action-description")].map(e=>e.textContent)'), ['Multiple choice quiz with scoring.','Collect live feedback without scoring.','Enter a quiz or survey.']);
         const actions = await evaluate(`(() => {
           const parent=document.querySelector(".home-actions");
           return {width:parent.clientWidth,buttons:[...parent.children].map(e=>{
@@ -866,15 +958,16 @@ try {
           })};
         })()`);
         for (const action of actions.buttons) {
-          assert.ok(action.height >= 72 && action.height <= 84, `${label}: compact readable action height ${JSON.stringify(actions)}`);
+          assert.ok(action.height >= 96 && action.height <= 108, `${label}: readable action height ${JSON.stringify(actions)}`);
           assert.equal(action.border, '1px');
           assert.equal(action.style, 'solid');
           assert.equal(action.radius, '12px');
-          assert.equal(action.padding, '12px 16px');
+          assert.equal(action.padding, '16px 20px');
         }
         assert.equal(new Set(actions.buttons.map(e=>e.width)).size, 1, `${label}: all three action widths match`);
+        assert.equal(new Set(actions.buttons.map(e=>e.height)).size, 1, `${label}: all three action heights match`);
         if (size === 'desktop') {
-          assert.deepEqual(actions.buttons.map(e=>e.width), [260,260,260]);
+          assert.deepEqual(actions.buttons.map(e=>e.width), [280,280,280]);
           assert.equal(new Set(actions.buttons.map(e=>e.top)).size, 1, 'desktop actions align in one row');
           assert.ok(actions.buttons.reduce((sum,e)=>sum+e.width,24) < actions.width * .85, 'desktop actions do not stretch across the row');
         }

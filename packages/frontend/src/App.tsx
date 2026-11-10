@@ -25,6 +25,7 @@ export default function App() {
   const page = route.page;
   const routeKey = routeUrl(route);
   const activeRouteKey = useRef(routeKey);
+  const entryFocus = useRef<{ route: string; selector: string } | undefined>(undefined);
   const [code, setCode] = useState('');
   const [nickname, setNickname] = useState('');
   const [draft, setDraft] = useState<Draft>(blankDraft);
@@ -40,7 +41,7 @@ export default function App() {
   const navigationVersion = useRef(0);
   const identityVersion = useRef(0);
   const refreshVersion = useRef(0);
-  const [refreshing, setRefreshing] = useState(false);
+  const [libraryState, setLibraryState] = useState<'loading' | 'ready' | 'error'>('loading');
   const signedIn = !!session?.isAuthenticated && !session.isAnonymous;
   const showingHost = route.page === 'game' && route.host;
   const invitation = route.page === 'join' ? route.invitation : '';
@@ -49,14 +50,16 @@ export default function App() {
   function changeRoute(next: AppRoute) {
     const key = routeUrl(next);
     if (key === activeRouteKey.current) return;
+    if (entryFocus.current?.route !== key) entryFocus.current = undefined;
     activeRouteKey.current = key;
     navigationVersion.current++;
     operation.current++;
     refreshVersion.current++;
-    setBusy(false); setRefreshing(false); setError(''); setGame(undefined); setAuthorReady(false);
+    setBusy(false); setLibraryState('loading'); setError(''); setGame(undefined); setAuthorReady(false);
     setRoute(next);
   }
-  function navigate(next: AppRoute, replace = false) {
+  function navigate(next: AppRoute, replace = false, focusSelector?: string) {
+    if (focusSelector) entryFocus.current = { route: routeUrl(next), selector: focusSelector };
     history[replace ? 'replaceState' : 'pushState'](null, '', routeUrl(next));
     changeRoute(next);
   }
@@ -95,7 +98,7 @@ export default function App() {
         setSession(s);
         sessionStorage.removeItem(TICKET_KEY);
         operation.current++; refreshVersion.current++;
-        setBusy(false); setRefreshing(false); setAuthorReady(false);
+        setBusy(false); setLibraryState('loading'); setAuthorReady(false);
         setGame(undefined); setTicket(undefined); setQuizzes([]); setSettings(undefined); setDraft(blankDraft()); setAuthor(undefined);
       });
     }).catch((e: unknown) => setError(message(e)));
@@ -105,19 +108,17 @@ export default function App() {
   async function refresh(c = connection) {
     if (!c) return;
     const version = ++refreshVersion.current;
-    setRefreshing(true);
+    setLibraryState('loading');
     try {
       const config = await call<SettingsView>(c, { command: 'settings' });
       if (version !== refreshVersion.current) return;
       setSettings(config);
       if (c.client.auth.getSession().isAuthenticated && !c.client.auth.getSession().isAnonymous) {
         const items = await call<QuizSummary[]>(c, { command: 'list' });
-        if (version === refreshVersion.current) setQuizzes(items);
+        if (version === refreshVersion.current) { setQuizzes(items); setLibraryState('ready'); }
       }
     } catch (e) {
-      if (version === refreshVersion.current) setError(message(e));
-    } finally {
-      if (version === refreshVersion.current) setRefreshing(false);
+      if (version === refreshVersion.current) { setError(message(e)); setLibraryState('error'); }
     }
   }
   useEffect(() => {
@@ -159,6 +160,14 @@ export default function App() {
       .catch((e: unknown) => { if (active && navigation === navigationVersion.current && identity === identityVersion.current) setError(message(e)); });
     return () => { active = false; };
   }, [connection, signedIn, session, routeKey]);
+  useEffect(() => {
+    const pending = entryFocus.current;
+    if (!pending || pending.route !== routeKey) return;
+    const field = content.current?.querySelector<HTMLInputElement>(pending.selector);
+    if (!field || field.disabled) return;
+    entryFocus.current = undefined;
+    if (!document.querySelector('dialog[open]')) field.focus();
+  }, [routeKey, authorReady, signedIn]);
   useEffect(() => {
     if (!connection || route.page !== 'game' || (route.host ? !signedIn : ticket?.id !== route.id)) return;
     let stopped = false;
@@ -215,7 +224,7 @@ export default function App() {
     setTicket(undefined); navigate({ page: 'home' });
   }
   function create(mode: Draft['mode']) {
-    navigate({ page: 'author', id: '', mode });
+    navigate({ page: 'author', id: '', mode }, false, '#quiz-title');
     if (!signedIn) signIn();
   }
   function openDraft(id: string) { navigate({ page: 'author', id, mode: 'quiz' }); }
@@ -231,7 +240,7 @@ export default function App() {
   const joinUnavailableReason = author?.phase === 'finished' ? 'This session has finished.'
     : author && author.phase !== 'lobby' && !author.draft.lateJoin ? 'This session does not allow late joins.' : undefined;
   const back = <button className="icon-button" aria-label="Go back" onClick={home}><Icon name="back" /></button>;
-  const recent = <SessionLibrary quizzes={quizzes} busy={busy} onOpen={(q) => openDraft(q.id)}
+  const recent = <SessionLibrary quizzes={quizzes} loadState={libraryState} busy={busy} onOpen={(q) => openDraft(q.id)}
     onDuplicate={(id) => void run(async (current) => { const copy = await call<{ id: string }>(connection!, { command: 'duplicate', id }); if (current()) openDraft(copy.id); })}
     onDelete={(id) => void run(async (current) => { if (window.confirm('Delete this session and all participant responses permanently?')) { await call(connection!, { command: 'delete', id }); if (current()) await refresh(); } })} />;
   const requiresSignIn = page === 'admin' || page === 'author' || showingHost;
@@ -253,11 +262,11 @@ export default function App() {
       {page === 'home' && <div className="home-screen forms-home">
         <h1 className="sr-only">QuizCrowd live quizzes and surveys</h1>
         <div className="home-actions">
-          <button className="home-action quiz-action" aria-label="New Live Quiz" aria-describedby="new-quiz-description" disabled={!connection || busy} onClick={() => create('quiz')}><Icon name="quiz" /><span><strong>New Live Quiz</strong><span id="new-quiz-description" className="action-description">Create a quiz and host it live.</span></span></button>
-          <button className="home-action survey-action" aria-label="New Live Survey" aria-describedby="new-survey-description" disabled={!connection || busy} onClick={() => create('survey')}><Icon name="survey" /><span><strong>New Live Survey</strong><span id="new-survey-description" className="action-description">Collect feedback without scoring.</span></span></button>
-          <button className="home-action join-code-button" aria-label="Join with Code" aria-describedby="join-description" disabled={busy} onClick={() => navigate({ page: 'join', invitation: '' })}><Icon name="join" /><span><strong>Join with Code</strong><span id="join-description" className="action-description">Enter a quiz or survey.</span></span></button>
+          <button className="home-action quiz-action" aria-label="New Live Quiz" aria-describedby="new-quiz-description" disabled={!connection || busy} onClick={() => create('quiz')}><Icon name="quiz" /><span><strong>New Live Quiz</strong><span id="new-quiz-description" className="action-description">Multiple choice quiz with scoring.</span></span></button>
+          <button className="home-action survey-action" aria-label="New Live Survey" aria-describedby="new-survey-description" disabled={!connection || busy} onClick={() => create('survey')}><Icon name="survey" /><span><strong>New Live Survey</strong><span id="new-survey-description" className="action-description">Collect live feedback without scoring.</span></span></button>
+          <button className="home-action join-code-button" aria-label="Join with Code" aria-describedby="join-description" disabled={busy} onClick={() => navigate({ page: 'join', invitation: '' }, false, '#session-code')}><Icon name="join" /><span><strong>Join with Code</strong><span id="join-description" className="action-description">Enter a quiz or survey.</span></span></button>
         </div>
-        {signedIn ? <>{refreshing && <p className="muted small" role="status">Refreshing recent items...</p>}{recent}</>
+        {signedIn ? recent
           : <section className="card home-signin"><h2>Recent Items</h2><p className="muted">Your recent quiz and surveys.</p><p className="muted">Sign in with Microsoft Entra to create and manage your sessions. Attendees can join using a six-digit game code.</p></section>}
       </div>}
       {page === 'join' && <div className="centered-page">
@@ -292,6 +301,7 @@ export default function App() {
       </div>}
       {page === 'author' && signedIn && !authorReady && <p role="status">{error ? 'Session unavailable.' : 'Loading editor...'}</p>}
       {page === 'author' && signedIn && authorReady && <AuthorEditor key={routeKey} draft={draft} onChange={setDraft} editing={!!editing} dirty={!!author && !sameDraftContent(draft, author.draft)} readOnly={readOnly} anonymousEnabled={!!settings?.anonymousEnabled} busy={busy} onBack={home} onHost={editing ? () => host(editing) : undefined}
+        onResults={author?.mode === 'survey' && author.phase === 'finished' ? () => { setTicket(undefined); navigate({ page: 'game', id: author.id, host: true, lobby: false }); } : undefined}
         onJoin={readOnly && author && author.phase !== 'lobby' ? () => navigate({ page: 'join', invitation: author.code }) : undefined} joinUnavailableReason={joinUnavailableReason}
         onRevokePublic={editing && draft.visibility === 'public' ? () => void run(async (current) => {
         await call(connection!, { command: 'visibility', id: editing, visibility: 'internal' });

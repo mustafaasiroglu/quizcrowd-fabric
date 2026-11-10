@@ -2,13 +2,16 @@ import type { QuizSummary } from '@rayfin-app/shared';
 import { Icon } from './Icon';
 const status: Record<QuizSummary['phase'], string> = { lobby: 'Not started', question: 'In progress', reveal: 'Showing results', leaderboard: 'Leaderboard', finished: 'Finished' };
 
-export function SessionLibrary({ quizzes, busy, onOpen, onDuplicate, onDelete }: {
-  quizzes: QuizSummary[]; busy: boolean;
+export function SessionLibrary({ quizzes, loadState, busy, onOpen, onDuplicate, onDelete }: {
+  quizzes: QuizSummary[]; loadState: 'loading' | 'ready' | 'error'; busy: boolean;
   onOpen(quiz: QuizSummary): void; onDuplicate(id: string): void; onDelete(id: string): void;
 }) {
-  return <section className="recent-sessions" aria-labelledby="recent-heading">
+  return <section className="recent-sessions" aria-labelledby="recent-heading" aria-busy={loadState === 'loading'}>
     <div className="recent-heading"><h2 id="recent-heading">Recent Items</h2><p className="small muted">Your recent quiz and surveys.</p></div>
-    {!quizzes.length && <div className="card empty-library"><p className="muted">No sessions yet. Create a live quiz or survey to get started.</p></div>}
+    {loadState === 'loading' ? <div role="status" className="library-loading"><span className="sr-only">Loading recent items...</span>
+      <div className="session-grid" aria-hidden="true">{[0, 1, 2].map(index => <div key={index} className="card session-placeholder"><span /><span /><span /></div>)}</div>
+    </div> : loadState === 'error' ? <p className="muted">Recent items could not be loaded.</p> : <>
+    {!quizzes.length && <div className="card empty-library"><p className="muted">No recent items</p></div>}
     <div className="session-grid">{quizzes.map((quiz) => <article className="card session-card" key={quiz.id}>
       <button className="session-open" disabled={busy} aria-label={`${quiz.readOnly ? 'View' : 'Open'} ${quiz.title}`} aria-describedby={`status-${quiz.id} date-${quiz.id} metrics-${quiz.id}`} onClick={() => onOpen(quiz)}>
         <span className="session-card-heading"><span className="session-type"><Icon name={quiz.mode === 'quiz' ? 'quiz' : 'survey'} />{quiz.mode === 'quiz' ? 'Live Quiz' : 'Live Survey'}</span><span id={`status-${quiz.id}`} className={`badge phase-${quiz.phase}`}>{status[quiz.phase]}</span></span>
@@ -27,6 +30,6 @@ export function SessionLibrary({ quizzes, busy, onOpen, onDuplicate, onDelete }:
             </div>
           </details>
       </div>
-    </article>)}</div>
+    </article>)}</div></>}
   </section>;
 }

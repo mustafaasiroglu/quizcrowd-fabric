@@ -35,9 +35,9 @@ export function removeOption(question: Question, index: number): Question {
     ...(question.survey && !options.length ? { survey: { ...question.survey, allowMultiple: false } } : {}),
     correctIndex: correct === null || correct === index ? null : correct > index ? correct - 1 : correct };
 }
-export function AuthorEditor({ draft, onChange, editing, dirty = false, anonymousEnabled, busy, readOnly = false, onSave, onBack, onHost, onJoin, joinUnavailableReason, onRevokePublic }: {
+export function AuthorEditor({ draft, onChange, editing, dirty = false, anonymousEnabled, busy, readOnly = false, onSave, onBack, onHost, onJoin, onResults, joinUnavailableReason, onRevokePublic }: {
   draft: Draft; onChange(draft: Draft): void; editing: boolean; anonymousEnabled: boolean;
-  busy: boolean; readOnly?: boolean; dirty?: boolean; onSave(): void; onBack(): void; onHost?(): void; onJoin?(): void; joinUnavailableReason?: string; onRevokePublic?(): void;
+  busy: boolean; readOnly?: boolean; dirty?: boolean; onSave(): void; onBack(): void; onHost?(): void; onJoin?(): void; onResults?(): void; joinUnavailableReason?: string; onRevokePublic?(): void;
 }) {
   const [removing, setRemoving] = useState<number>();
   const questionsRef = useRef<HTMLDivElement>(null);
@@ -77,9 +77,10 @@ export function AuthorEditor({ draft, onChange, editing, dirty = false, anonymou
   return <div className="author page-container">
     <div className="section-heading page-heading"><button className="icon-button" aria-label="Go back" onClick={onBack}><Icon name="back" /></button><h1>{readOnly ? 'View' : editing ? 'Edit' : 'New'} Live {draft.mode === 'quiz' ? 'Quiz' : 'Survey'}</h1>
       {(needsSave || onHost || (readOnly && onJoin)) && <div className="author-session-actions">
+        {onResults && <button type="button" className="secondary compact-lobby-action" disabled={busy} onClick={onResults}><Icon name="responses" />View Results</button>}
         {readOnly && onJoin && <button type="button" className="subtle" disabled={busy || !!joinUnavailableReason} aria-describedby={joinUnavailableReason ? 'attendee-join-reason' : undefined} onClick={onJoin}><Icon name="join" />Attend</button>}
-        {needsSave ? <button type="submit" form="session-author-form" className="primary" disabled={busy || (draft.visibility === 'public' && (!anonymousEnabled || !draft.publicAcknowledged))}><Icon name="save" />{busy ? 'Saving...' : editing ? 'Save & Open' : 'Create & Open Lobby'}</button>
-          : onHost && <button type="button" className="primary" disabled={busy} onClick={onHost}><Icon name="play" />Open Lobby</button>}
+        {needsSave ? <button type="submit" form="session-author-form" className="primary" disabled={busy || (draft.visibility === 'public' && (!anonymousEnabled || !draft.publicAcknowledged))}><Icon name="save" />{busy ? 'Saving...' : editing ? 'Save & Open Lobby' : 'Create & Open Lobby'}</button>
+          : onHost && <button type="button" className="primary compact-lobby-action" disabled={busy} onClick={onHost}><Icon name="play" />Open Lobby</button>}
       </div>}
     </div>
     {readOnly && onJoin && joinUnavailableReason && <p id="attendee-join-reason" className="muted small attendee-join-reason">{joinUnavailableReason}</p>}
@@ -140,7 +141,7 @@ export function AuthorEditor({ draft, onChange, editing, dirty = false, anonymou
           </fieldset></div>
           <div className="settings-group"><fieldset className="late-join-settings"><legend>Allow late joins?</legend>
             <label className="check"><input type="radio" name="late-join" value="deny" checked={!draft.lateJoin} onChange={() => onChange({ ...draft, lateJoin: false })} />Don&apos;t allow late join</label>
-            <label className="check"><input type="radio" name="late-join" value="allow" checked={draft.lateJoin} onChange={() => onChange({ ...draft, lateJoin: true })} />Allow join after game start</label>
+            <label className="check"><input type="radio" name="late-join" value="allow" checked={draft.lateJoin} onChange={() => onChange({ ...draft, lateJoin: true })} />Allow join after session start</label>
           </fieldset></div>
           {draft.mode === 'quiz' && <div className="settings-group"><fieldset className="answer-reveal-settings"><legend>Show correct answers?</legend>
             <label className="check"><input type="radio" name="answer-reveal" value="wait_all" checked={draft.showAnswer === 'wait_all'} onChange={() => onChange({ ...draft, showAnswer: 'wait_all' })} />Wait for all users</label>

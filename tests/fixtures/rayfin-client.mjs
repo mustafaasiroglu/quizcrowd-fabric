@@ -124,6 +124,7 @@ function view(attendee) {
 }
 window.__quizcrowdFixture = {
   requests,
+  empty() { for (const record of records.values()) record.deleted = true; deleted = true; persist(); },
   defer(command) {
     let release;
     const promise = new Promise(resolve => { release = resolve; });
@@ -133,6 +134,7 @@ window.__quizcrowdFixture = {
   phase(next) { if (next === 'question' && phase !== 'question') questionStartedAt = Date.now() - 15000; phase = next; version++; persist(); },
   revealMode(value) { currentDraft.showAnswer = value; },
 };
+if (parameters.get('library') === 'loading') window.__quizcrowdFixture.defer('list');
 function summary(id = activeId, record = snapshot()) {
   const { currentDraft: draft, phase, myOption, myResponse } = record;
   return { id, code: record.currentCode, title: draft.title, phase, visibility: draft.visibility,

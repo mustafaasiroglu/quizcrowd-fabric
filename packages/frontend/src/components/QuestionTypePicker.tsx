@@ -34,7 +34,7 @@ export function QuestionTypePicker({ value, number, disabled, onChange }: {
     <button ref={trigger} type="button" className="question-type question-popover-trigger" value={value} disabled={disabled}
       aria-label={`Question ${number} response type: ${choices[selected]!.label}`} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
       onClick={() => { initialFocus.current = selected; setOpen(!open); }}>
-      <Icon name="adjust" /><span>{choices[selected]!.label}</span>
+      <span>{choices[selected]!.label}</span><Icon name="down" />
     </button>
     {open && !disabled && <div ref={menu} className="question-type-menu question-popover" id={id} role="menu" aria-label={`Question ${number} response type`}>
       {choices.map((choice, index) => <button key={choice.value} ref={element => { items.current[index] = element; }} type="button"

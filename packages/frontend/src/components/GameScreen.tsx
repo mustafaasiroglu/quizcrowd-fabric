@@ -4,6 +4,7 @@ import type { GameView, SurveyQuestionResult, SurveyResponse } from '@rayfin-app
 import { Icon } from './Icon';
 import { hasLongOptions, SurveyAnswers } from './SurveyAnswers';
 import { useQuestionCountdown } from '../lib/useQuestionCountdown';
+import { useFullscreen } from '../lib/useFullscreen';
 
 type Ranking = NonNullable<GameView['rankings']>[number];
 function SurveyResults({ results }: { results: SurveyQuestionResult[] }) {
@@ -36,6 +37,7 @@ export function GameScreen({ game, host, nickname, joinUrl, busy, onControl, onA
   onControl(): void; onAnswer(option: number): void; onSurveyAnswer(response: SurveyResponse): void; onHome(): void; onCopyError(error: unknown): void;
 }) {
   const { seconds, fill } = useQuestionCountdown(game);
+  const fullscreen = useFullscreen();
   const [copied, setCopied] = useState('');
   useEffect(() => {
     if (!copied) return;
@@ -60,7 +62,7 @@ export function GameScreen({ game, host, nickname, joinUrl, busy, onControl, onA
   return <div className={`game-stage stage-${game.phase} ${host ? 'host-stage' : 'attendee-stage'}`} data-phase={game.phase}>
     {game.phase === 'lobby' ? <section className={`card lobby ${host ? 'host-lobby' : 'attendee-lobby'}`}>
       {host ? <>
-        <h1>{game.title}</h1><p className="muted">Share this code with attendees</p>
+        <h1>{game.title}</h1><p className="muted">Scan QR code or visit link to join...</p>
         <div className="lobby-invitation">
         <div className="qr-container"><QRCodeSVG value={joinUrl} size={160} title={`Scan to join this ${game.mode}`} /></div>
         <div className="code-panel"><div className="session-code"><strong>{game.code}</strong><button className="icon-button" aria-label="Copy session code" onClick={() => void copy(game.code)}><Icon name={copied === game.code ? 'check' : 'copy'} /></button></div>
@@ -71,6 +73,7 @@ export function GameScreen({ game, host, nickname, joinUrl, busy, onControl, onA
         <p className="muted small">{game.players.length} attendee{game.players.length !== 1 ? 's' : ''} joined</p>
         <div className="players">{game.players.map((player, index) => <span key={index}>{player}</span>)}</div>
         <button className="primary full-width large-button" disabled={busy || !game.players.length} onClick={onControl}>{busy ? 'Starting...' : game.mode === 'quiz' ? 'Start Quiz' : 'Start Survey'}</button>
+        {!fullscreen && <p className="muted small fullscreen-tip">Tip: Press F11 to make full screen</p>}
       </> : <>
         <h1>You're in! <span aria-hidden="true">🎉</span></h1>
         {nickname && <p className="nickname">{nickname}</p>}

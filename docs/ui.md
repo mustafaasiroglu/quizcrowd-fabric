@@ -41,7 +41,7 @@ DOM changes into the platform page.
 
 | Screen | Behavior |
 | --- | --- |
-| Home | Compact equal-width (260px desktop) icon/title/description New Live Quiz / New Live Survey / Join with Code actions, not row-stretched; matching borders, 12px padding/radius and subtle 1.01 hover scale; Recent Items with Your recent quiz and surveys.; stacked on mobile |
+| Home | Compact equal-width (280px desktop) icon/title/description New Live Quiz / New Live Survey / Join with Code actions, not row-stretched; 16px icon-to-label gap, 16px/20px padding, matching borders/12px radius and subtle 1.01 hover scale; Recent Items with loading placeholders and a successful-empty state; stacked on mobile |
 | Join | Narrow card, six-digit numeric string code including leading zeros, separate nickname step; old links resolve; no pre-join preview action |
 | Author | Wide title/questions column with white Light surfaces or dark indigo surfaces; compact question cards, correctness controls, options and reordering |
 | Settings | Right sidebar on desktop, after the question/content column on narrow layouts in both visual and DOM/tab order; Who can respond? first, then answer duration, late joins and Quiz-only answer reveal; no Content Type label/control |
@@ -66,7 +66,7 @@ The answer colors themselves are unchanged by this animation adjustment.
 
 The single lobby action is in the page header and is not sticky. New items use
 **Create & Open Lobby**. Existing editable items use **Open Lobby** when unchanged
-and **Save & Open** when persisted content differs from the saved draft.
+and **Save & Open Lobby** when persisted content differs from the saved draft.
 Reverting changes returns to **Open Lobby** without resetting the draft.
 Comparison includes question order, options, correctness, Survey settings,
 audience and timing, normalizing legacy duration metadata and server-trimmed text.
@@ -121,7 +121,7 @@ Surveys omit the entire answer-reveal group, including its heading and help,
 in create/edit/read-only views. No empty group or separator remains.
 Started/answered-session settings remain disabled.
 Settings headings and choices use first-word capitalization, including
-**Allow late joins?**, **Don't allow late join**, **Allow join after game start**,
+**Allow late joins?**, **Don't allow late join**, **Allow join after session start**,
 **Show correct answers?**, **Wait for all users**, **Show after user response**
 and **Never show**. The stored enum values and server reveal rules are unchanged.
 Quiz questions place **Select the circle beside the correct answer.** below
@@ -175,6 +175,34 @@ checks still run. A finished session, or a started session with late joining
 disabled, shows a disabled action with its reason. These are snapshot-based UI
 hints: the server rechecks current state when a caller actually joins.
 
+Completed Survey owner views also offer **View Results**, navigating directly
+to the existing `/host/game/?gameId=<id>` completed-results screen. No new
+results route, attendee join, creation or host control is involved. Reload/back
+use the existing owner-authorized host projection and aggregate-only summaries;
+Quiz result behavior is unchanged. Open Lobby uses the same compact typography,
+padding and hit-target height as Attend; save/create actions keep their normal size.
+
+Lobby guidance says **Scan QR code or visit link to join...**. The optional
+**Tip: Press F11 to make full screen** is hidden while Fullscreen API,
+`display-mode: fullscreen` (including browser fullscreen in supporting browsers),
+or Firefox's `window.fullScreen` reports fullscreen. Media/fullscreen events,
+resize, focus and pageshow refresh the state; listeners are removed on unmount.
+No fullscreen is entered automatically and no screen-size equality heuristic is
+used. Browser/embedded hosts that expose none of these signals cannot reliably
+report browser-controlled fullscreen to page code, so their F11 detection is best effort.
+
+Recent Items starts in an explicit loading state with three noninteractive,
+screen-reader-hidden placeholder cards and an accessible loading status.
+It is separated from home actions by a 48px gap, reduced to 40px on mobile.
+**No recent items** appears only after a successful loaded empty list.
+Settings/list failures retain an error state, not an empty result. Existing
+navigation/identity/request generations reject stale success and failure results;
+pending list refreshes do not disable the home actions.
+Each home action focuses its destination's first editable field once the
+destination is ready: Quiz/Survey title or Session Code. The route-scoped focus
+request is consumed once and invalidated by navigation, so later refreshes,
+polls, validation and popover/dialog focus are not overridden.
+
 The Join/back regression was reproduced with a pending list refresh: old `home()`
 wrapped refresh in global `busy`, disabling every home action. Refresh now has
 its own nonblocking status. Navigation and identity generations invalidate stale
@@ -199,9 +227,10 @@ it previously overrode their white foreground with dark text in Light mode.
 Home uses separate `home-action` buttons with white Light surfaces and neutral
 Dark surfaces, neutral borders/titles/descriptions, and color only on icons.
 A subtle transparent brand tint reaches the lower-right corner (5% Light,
-8% Dark); most of each surface stays neutral. Equal compact 260px geometry
+8% Dark); most of each surface stays neutral. Equal compact 280px geometry
 and 1.01 hover scale are retained. The Survey description is
-**Collect feedback without scoring.**
+**Collect live feedback without scoring.** Quiz description is
+**Multiple choice quiz with scoring.**
 Game-screen purple button fills are slightly darker for text contrast.
 Deletion icons are neutral normally and red on hover/focus.
 
@@ -259,7 +288,7 @@ still disabled and the server/global/public-acknowledgement boundaries are uncha
 ## Survey question types and Other
 
 The upper-right question header shows a borderless neutral type trigger with a
-sliders icon on the left and selected label on the right; both become purple on hover/focus. Its anchored radio menu offers
+selected label on the left and a dropdown arrow on the right; both become purple on hover/focus. Its anchored radio menu offers
 three choices, keyboard arrows/Home/End/letter navigation, Enter/Space selection,
 Escape/focus restoration and outside-click/Tab dismissal. The selected type
 stays visible. The sidebar's Settings gear remains.
