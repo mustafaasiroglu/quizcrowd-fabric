@@ -298,11 +298,8 @@ input[type="radio"] { cursor: pointer; }
 .option-actions .icon { width: 12px; height: 12px; }
 .editor-actions { display: flex; gap: 12px; margin: 24px 0; }
 .author-content { grid-column: 1; grid-row: 1; }
-.author-submit { grid-column: 2; grid-row: 1; position: sticky; top: 16px; z-index: 4; width: 100%; }
-.author-settings { grid-column: 2; grid-row: 1; align-self: start; position: sticky; top: 16px; padding-top: 64px; min-width: 0; }
-.author-settings.is-readonly { padding-top: 0; }
+.author-settings { align-self: start; position: sticky; top: 16px; min-width: 0; }
 .author-settings .settings-panel { position: static; }
-.author :is(input, textarea, button) { scroll-margin-top: 80px; }
 .editor-actions button { flex: 1; padding: 12px 8px; color: var(--qc-muted); background: var(--qc-bg); border-width: 2px; font-weight: 500; }
 .outline-success { border-color: var(--qc-success); }
 .outline-primary { border-color: var(--qc-primary); }
@@ -344,14 +341,10 @@ input[type="radio"] { cursor: pointer; }
 .game-stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; }
 .game-stage .card { width: 100%; text-align: center; }
 .game-stage h1 { font-size: 24px; margin-bottom: 16px; }
-.lobby.host-lobby { max-width: 448px; }
-.lobby-toolbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
-.lobby.present-lobby { max-width: 960px; }
-.present-lobby h1 { font-size: clamp(24px, 4vw, 36px); overflow-wrap: anywhere; }
-.present-lobby .lobby-invitation { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; margin: 16px 0; }
-.present-lobby .session-code strong { font-size: clamp(32px, 6vw, 72px); }
-.present-lobby .qr-container { margin: 0; justify-self: center; }
-.present-lobby .players { max-height: 64px; overflow: auto; margin-bottom: 16px; }
+.lobby.host-lobby { max-width: 600px; }
+.host-lobby h1 { overflow-wrap: anywhere; }
+.lobby-invitation { display: flex; flex-direction: column; align-items: center; margin: 16px 0; }
+.lobby-invitation .code-panel { width: 100%; }
 .lobby.attendee-lobby { max-width: 384px; }
 .lobby h1 { margin-bottom: 8px; }
 .code-panel { margin: 16px 0; background: var(--qc-bg); border-radius: 12px; padding: 20px; }
@@ -479,15 +472,12 @@ footer { position: relative; z-index: 1; text-align: center; padding: 12px 16px;
 @media (max-width: 899px) {
   .author-layout { display: flex; flex-direction: column; gap: 20px; }
   .author-content, .author-settings { width: 100%; }
-  .author-submit { top: max(8px, env(safe-area-inset-top)); }
-  .author-settings { position: static; padding-top: 0; }
+  .author-settings { position: static; }
   .settings-panel { position: static; }
 }
 @media (max-width: 639px) {
   .game-stage .timer { position: sticky; top: 0; z-index: 4; padding-top: max(8px, env(safe-area-inset-top)); background: var(--qc-bg-two); }
   .attendee-question :is(button, input, textarea) { scroll-margin-top: 80px; }
-  .present-lobby .lobby-invitation { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .present-lobby .qr-container svg { width: 160px; height: 160px; }
   .reorder .icon-button { min-height: 32px; height: 32px; }
   .screen-container { padding: 24px 16px; }
   .forms-home .home-actions { gap: 12px; margin-bottom: 32px; }
@@ -496,6 +486,7 @@ footer { position: relative; z-index: 1; text-align: center; padding: 12px 16px;
   .session-card.card { padding: 0; }
   .author .page-heading { flex-wrap: wrap; }
   .author .page-heading h1 { font-size: 24px; }
+  .author .page-heading > .author-session-actions { flex-basis: 100%; }
   .app-toolbar { padding: 12px 16px; align-items: flex-start; gap: 8px; }
   .toolbar-actions { gap: 8px 12px; }
   .toolbar-actions > .text-button { font-size: 12px; }

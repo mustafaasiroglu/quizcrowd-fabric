@@ -12,6 +12,22 @@ export const blankDraft = (mode: Draft['mode'] = 'quiz'): Draft => ({
   title: '', mode, visibility: 'internal', publicAcknowledged: false,
   lateJoin: false, showAnswer: 'wait_all', questions: [blankQuestion()], answerDuration: { mode: 'same', seconds: 20 },
 });
+export function sameDraftContent(left: Draft, right: Draft): boolean {
+  const content = (draft: Draft) => {
+    const timing = getAnswerDuration(draft);
+    return JSON.stringify({
+      title: draft.title.trim(), mode: draft.mode, visibility: draft.visibility,
+      publicAcknowledged: draft.publicAcknowledged, lateJoin: draft.lateJoin, showAnswer: draft.showAnswer,
+      answerDuration: { mode: timing.mode, seconds: timing.seconds },
+      questions: draft.questions.map(question => ({
+        text: question.text.trim(), options: question.options.map(option => option.trim()),
+        correctIndex: question.correctIndex, duration: question.duration,
+        ...(draft.mode === 'survey' ? { survey: { other: !!question.survey?.other, allowMultiple: !!question.survey?.allowMultiple } } : {}),
+      })),
+    });
+  };
+  return content(left) === content(right);
+}
 export function removeOption(question: Question, index: number): Question {
   const correct = question.correctIndex;
   const options = question.options.filter((_, i) => i !== index);
@@ -19,14 +35,15 @@ export function removeOption(question: Question, index: number): Question {
     ...(question.survey && !options.length ? { survey: { ...question.survey, allowMultiple: false } } : {}),
     correctIndex: correct === null || correct === index ? null : correct > index ? correct - 1 : correct };
 }
-export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy, readOnly = false, onSave, onBack, onHost, onJoin, joinUnavailableReason, onRevokePublic }: {
+export function AuthorEditor({ draft, onChange, editing, dirty = false, anonymousEnabled, busy, readOnly = false, onSave, onBack, onHost, onJoin, joinUnavailableReason, onRevokePublic }: {
   draft: Draft; onChange(draft: Draft): void; editing: boolean; anonymousEnabled: boolean;
-  busy: boolean; readOnly?: boolean; onSave(): void; onBack(): void; onHost?(): void; onJoin?(): void; joinUnavailableReason?: string; onRevokePublic?(): void;
+  busy: boolean; readOnly?: boolean; dirty?: boolean; onSave(): void; onBack(): void; onHost?(): void; onJoin?(): void; joinUnavailableReason?: string; onRevokePublic?(): void;
 }) {
   const [removing, setRemoving] = useState<number>();
   const questionsRef = useRef<HTMLDivElement>(null);
   const optionMemory = useRef(new WeakMap<Question, string[]>());
   const timing = getAnswerDuration(draft);
+  const needsSave = !readOnly && (!editing || dirty);
   function setDuration(mode: 'same' | 'custom', seconds = timing.seconds) {
     const next = setAnswerDuration(draft, { mode, seconds });
     next.questions.forEach((question, index) => {
@@ -59,15 +76,15 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
   }
   return <div className="author page-container">
     <div className="section-heading page-heading"><button className="icon-button" aria-label="Go back" onClick={onBack}><Icon name="back" /></button><h1>{readOnly ? 'View' : editing ? 'Edit' : 'New'} Live {draft.mode === 'quiz' ? 'Quiz' : 'Survey'}</h1>
-      {(onHost || (readOnly && onJoin)) && <div className="author-session-actions">
-        {readOnly && onJoin && <button className="subtle" disabled={busy || !!joinUnavailableReason} aria-describedby={joinUnavailableReason ? 'attendee-join-reason' : undefined} onClick={onJoin}><Icon name="join" />Join As Attendee</button>}
-        {onHost && <button className="primary" disabled={busy} onClick={onHost}><Icon name="play" />Open Lobby</button>}
+      {(needsSave || onHost || (readOnly && onJoin)) && <div className="author-session-actions">
+        {readOnly && onJoin && <button type="button" className="subtle" disabled={busy || !!joinUnavailableReason} aria-describedby={joinUnavailableReason ? 'attendee-join-reason' : undefined} onClick={onJoin}><Icon name="join" />Attend</button>}
+        {needsSave ? <button type="submit" form="session-author-form" className="primary" disabled={busy || (draft.visibility === 'public' && (!anonymousEnabled || !draft.publicAcknowledged))}><Icon name="save" />{busy ? 'Saving...' : editing ? 'Save & Open' : 'Create & Open Lobby'}</button>
+          : onHost && <button type="button" className="primary" disabled={busy} onClick={onHost}><Icon name="play" />Open Lobby</button>}
       </div>}
     </div>
     {readOnly && onJoin && joinUnavailableReason && <p id="attendee-join-reason" className="muted small attendee-join-reason">{joinUnavailableReason}</p>}
     {readOnly && <p className="readonly-notice" role="status">Read-only: this session has started or has responses.</p>}
-    <form className="author-layout" onSubmit={(event) => { event.preventDefault(); if (!readOnly) onSave(); }}>
-      {!readOnly && <div className="author-submit"><button type="submit" className="primary full-width" disabled={busy || (draft.visibility === 'public' && (!anonymousEnabled || !draft.publicAcknowledged))}><Icon name="save" />{busy ? 'Saving...' : editing ? 'Save & Open Lobby' : 'Create & Open Lobby'}</button></div>}
+    <form id="session-author-form" className="author-layout" onSubmit={(event) => { event.preventDefault(); if (!readOnly && !busy) { if (needsSave) onSave(); else onHost?.(); } }}>
       <fieldset className="author-content" disabled={readOnly || busy}>
         <legend className="sr-only">Session content</legend>
         <section className="card title-card"><label htmlFor="quiz-title">Title</label><input id="quiz-title" placeholder={draft.mode === 'quiz' ? 'Untitled live quiz' : 'Untitled live survey'} required maxLength={MAX_TITLE_LENGTH} value={draft.title} onChange={(e) => onChange({ ...draft, title: e.target.value })} /></section>
@@ -106,7 +123,7 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
           requestAnimationFrame(() => questionsRef.current?.querySelector<HTMLTextAreaElement>('fieldset:last-child textarea')?.focus());
         }}><Icon name="plus" />Add Question</button></div>}
       </fieldset>
-      <div className={`author-settings ${readOnly ? 'is-readonly' : ''}`}><aside className="card settings-panel" aria-labelledby="settings-heading"><h2 id="settings-heading"><Icon name="settings" />Settings</h2>
+      <div className="author-settings"><aside className="card settings-panel" aria-labelledby="settings-heading"><h2 id="settings-heading"><Icon name="settings" />Settings</h2>
         {onRevokePublic && <button type="button" className="subtle full-width" disabled={busy} onClick={onRevokePublic}>Revoke public access (make internal)</button>}
         <fieldset disabled={readOnly || busy}><legend className="sr-only">Session settings</legend>
           <div className="settings-group"><fieldset className="audience-settings"><legend>Who can respond?</legend>

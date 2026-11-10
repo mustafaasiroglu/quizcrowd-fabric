@@ -4,7 +4,7 @@ import { copyTitle } from '@rayfin-app/shared';
 const parameters = new URLSearchParams(location.search);
 const previous = JSON.parse(sessionStorage.getItem('quizcrowd-test-fixture') ?? 'null');
 const requestedExample = parameters.get('example');
-const example = ['survey-multiple', 'survey-single', 'survey-other-only', 'survey-legacy-single-other', 'quiz-ten', 'survey-ten', 'survey-results'].includes(requestedExample) ? requestedExample : previous?.example;
+const example = ['survey-multiple', 'survey-single', 'survey-other-only', 'survey-legacy-single-other', 'quiz-ten', 'survey-ten', 'survey-results', 'response-locked'].includes(requestedExample) ? requestedExample : previous?.example;
 const stored = requestedExample && example !== previous?.example ? null : previous;
 let authenticated = stored?.authenticated ?? parameters.get('fixture') !== 'signed-out';
 const admin = stored?.admin ?? parameters.get('fixture') !== 'creator';
@@ -36,7 +36,9 @@ let myResponse;
 let surveyAnswers = {};
 let version = 1;
 const players = ['Alex', 'Sam', 'Taylor', 'Jordan'];
-if (!stored && example === 'survey-results') {
+if (!stored && example === 'response-locked') {
+  myOption = 0;
+} else if (!stored && example === 'survey-results') {
   currentCode = '600123';
   currentDraft = { ...draft, title: 'Survey results demo', mode: 'survey', lateJoin: true, questions: [
     { text: 'Which topics should we include?', options: ['Product sessions', 'Workshops'], correctIndex: null, duration: 120, survey: { other: true, allowMultiple: true } },

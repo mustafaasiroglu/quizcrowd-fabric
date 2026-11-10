@@ -37,8 +37,6 @@ export function GameScreen({ game, host, nickname, joinUrl, busy, onControl, onA
 }) {
   const { seconds, fill } = useQuestionCountdown(game);
   const [copied, setCopied] = useState('');
-  const [presenting, setPresenting] = useState(false);
-  useEffect(() => setPresenting(false), [game.id, game.phase]);
   useEffect(() => {
     if (!copied) return;
     const timer = setTimeout(() => setCopied(''), 2000);
@@ -60,15 +58,14 @@ export function GameScreen({ game, host, nickname, joinUrl, busy, onControl, onA
     </li>)}</ol>;
   }
   return <div className={`game-stage stage-${game.phase} ${host ? 'host-stage' : 'attendee-stage'}`} data-phase={game.phase}>
-    {game.phase === 'lobby' ? <section className={`card lobby ${host ? 'host-lobby' : 'attendee-lobby'} ${host && presenting ? 'present-lobby' : ''}`}>
+    {game.phase === 'lobby' ? <section className={`card lobby ${host ? 'host-lobby' : 'attendee-lobby'}`}>
       {host ? <>
-        <div className="lobby-toolbar"><button className="subtle" aria-pressed={presenting} onClick={() => setPresenting(value => !value)}>{presenting ? 'Exit presentation' : 'Present lobby'}</button></div>
-        <h1>{presenting ? game.title : 'Waiting for Users'}</h1><p className="muted">{presenting ? 'Open the invite link or scan the QR code, then enter your nickname.' : 'Share this code with attendees'}</p>
+        <h1>{game.title}</h1><p className="muted">Share this code with attendees</p>
         <div className="lobby-invitation">
+        <div className="qr-container"><QRCodeSVG value={joinUrl} size={160} title={`Scan to join this ${game.mode}`} /></div>
         <div className="code-panel"><div className="session-code"><strong>{game.code}</strong><button className="icon-button" aria-label="Copy session code" onClick={() => void copy(game.code)}><Icon name={copied === game.code ? 'check' : 'copy'} /></button></div>
           <div className="join-link"><a href={joinUrl}>{joinUrl}</a><button className="icon-button" aria-label="Copy invite link" onClick={() => void copy(joinUrl)}><Icon name={copied === joinUrl ? 'check' : 'copy'} /></button></div>
         </div>
-        <div className="qr-container"><QRCodeSVG value={joinUrl} size={presenting ? 224 : 150} title={`Scan to join this ${game.mode}`} /></div>
         </div>
         {copied && <span role="status" className="sr-only">Copied to clipboard.</span>}
         <p className="muted small">{game.players.length} attendee{game.players.length !== 1 ? 's' : ''} joined</p>
@@ -80,7 +77,7 @@ export function GameScreen({ game, host, nickname, joinUrl, busy, onControl, onA
         <p className="muted">Waiting for host to start...</p><div className="loading-spinner" role="status" aria-label="Waiting for host" />
         <div className="players">{game.players.map((player, index) => <span key={index} className={player === nickname ? 'is-me' : ''}>{player}</span>)}</div>
       </>}
-      {!presenting && <p className="game-context muted small">{game.title}</p>}
+      {!host && <p className="game-context muted small">{game.title}</p>}
     </section> : game.phase === 'question' && question ? <>
       <section className={host ? 'card question-screen' : 'attendee-question'}>
         <div className="timer" role="timer" aria-label={`${seconds} seconds remaining`}>

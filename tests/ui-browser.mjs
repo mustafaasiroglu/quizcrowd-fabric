@@ -82,7 +82,7 @@ async function input(selector, value) {
   await evaluate(`(() => { const element=document.querySelector(${JSON.stringify(selector)}); if (!element) throw new Error('Input missing'); const proto=element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto,'value').set.call(element,${JSON.stringify(value)}); element.dispatchEvent(new Event('input',{bubbles:true})); element.dispatchEvent(new Event('change',{bubbles:true})); })()`);
 }
 async function submitAuthor() {
-  await pointerClick('document.querySelector(".author-submit button[type=submit]")');
+  await pointerClick('document.querySelector(".author-session-actions button[type=submit]")');
 }
 async function chooseSurveyType(value) {
   if (!await evaluate('document.querySelector(".question-type").getAttribute("aria-expanded")==="true"')) {
@@ -354,10 +354,54 @@ try {
           await screenshot('quizcrowd-mark','.brand-mark');
         }
       });
-      await check(`${theme}-${size}: selected UX sticky authoring, timer, presentation and survey summaries`, async () => {
+      await check(`${theme}-${size}: saved-content lobby header clean, dirty, reverted and failed save`, async () => {
+        const label=`${theme}-${size}-lobby-header`,id='11111111-2222-4333-8444-555555555555';
+        if(size==='mobile')await cdp.call('Emulation.setDeviceMetricsOverride',{width:320,height:740,deviceScaleFactor:1,mobile:false},session);
+        await navigate(`host/item/?gameId=${id}`);await click(theme==='dark'?'Dark':'Light');await until('!!document.querySelector("#quiz-title")');
+        const title=await evaluate('document.querySelector("#quiz-title").value');
+        assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Open Lobby');
+        assert.equal(await evaluate('document.querySelector(".author button[type=submit]")===null'),true);
+        await inspectScreen(`${label}-clean`);await screenshot(`${label}-clean`);
+        await click('Open Lobby');await until('!!document.querySelector(".host-lobby")');
+        assert.equal(await evaluate('window.__quizcrowdFixture.requests.filter(r=>r.command==="edit"&&r.draft).length'),0);
+        await evaluate('history.back()');await until('!!document.querySelector("#quiz-title")');
+        await input('#quiz-title',`${title} revised`);
+        assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Save & Open');
+        assert.equal(await evaluate('document.querySelector(".author button[type=submit]").form.id'),'session-author-form');
+        await input('#quiz-title',title);
+        assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Open Lobby');
+        await pointerClick('document.querySelector(\'input[name="late-join"][value="allow"]\')');
+        assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Save & Open');
+        await pointerClick('document.querySelector(\'input[name="late-join"][value="deny"]\')');
+        assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Open Lobby');
+        await input('#question-0','');
+        await submitAuthor();
+        assert.equal(await evaluate('document.querySelector("#question-0").validity.valueMissing'),true);
+        assert.equal(await evaluate('window.__quizcrowdFixture.requests.filter(r=>r.command==="edit"&&r.draft).length'),0);
+        await input('#question-0','Revised question');
+        await inspectScreen(`${label}-dirty`);await screenshot(`${label}-dirty`);
+        await evaluate('window.__quizcrowdFixture.defer("edit")');await submitAuthor();
+        assert.equal(await evaluate('document.querySelector(".author-session-actions .primary").disabled'),true);
+        await evaluate('window.__quizcrowdFixture.release("Synthetic save failure")');
+        await until('document.querySelector("[role=alert]")?.textContent.includes("Synthetic save failure")');
+        assert.equal(await evaluate('document.querySelector("#question-0").value'),'Revised question');
+        assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Save & Open');
+        assert.equal(await evaluate('location.pathname'),'/host/item/');
+        await inspectScreen(`${label}-failed-save`);await screenshot(`${label}-failed-save`);
+        await submitAuthor();await until('!!document.querySelector(".host-lobby")');
+        await evaluate('history.back()');await until('!!document.querySelector("#quiz-title")');
+        assert.equal(await evaluate('document.querySelector("#question-0").value'),'Revised question');
+        assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Open Lobby');
+        await navigate(`host/item/?gameId=${id}&example=response-locked`);await until('!!document.querySelector(".readonly-notice")');
+        assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Open Lobby');
+        assert.equal(await evaluate('document.querySelector(".author-content").disabled'),true);
+        await inspectScreen(`${label}-response-locked`);await screenshot(`${label}-response-locked`);
+        await cdp.call('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false},session);
+      });
+      await check(`${theme}-${size}: selected UX header authoring, timer, single lobby and survey summaries`, async () => {
         const label=`${theme}-${size}-selected-ux`, id='11111111-2222-4333-8444-555555555555';
         await navigate();await click(theme==='dark'?'Dark':'Light');await click('New Live Survey');
-        assert.equal(await evaluate('document.querySelector(".author-submit button").textContent'),'Create & Open Lobby');
+        assert.equal(await evaluate('document.querySelector(".author-session-actions .primary").textContent'),'Create & Open Lobby');
         assert.equal(await evaluate('document.querySelector(".editor-actions").textContent'),'Add Question');
         await pointerClick('document.querySelector(\'input[value="custom"]\')');await click('Add Other to question 1');
         const controls=await evaluate(`(() => {
@@ -369,19 +413,18 @@ try {
         for(const trigger of controls.triggers){assert.equal(trigger.border,'0px');assert.notEqual(trigger.background,'rgba(0, 0, 0, 0)');}
         for(let i=0;i<5;i++)await click('Add Question');
         await evaluate('window.scrollTo(0,800)');await pause(100);
-        const save=await evaluate('(() => {const r=document.querySelector(".author-submit").getBoundingClientRect();return {top:r.top,bottom:r.bottom,right:r.right}})()');
-        assert.ok(save.top>=0&&save.top<=16&&save.bottom<height&&save.right<=width,`${label}: sticky save ${JSON.stringify(save)}`);
+        const save=await evaluate('(() => {const r=document.querySelector(".author-session-actions").getBoundingClientRect();return {top:r.top,bottom:r.bottom,right:r.right}})()');
+        assert.ok(save.bottom<0&&save.right<=width,`${label}: header action must scroll away ${JSON.stringify(save)}`);
         if(size==='mobile')assert.equal(await evaluate('document.querySelector(".author-content").getBoundingClientRect().bottom<=document.querySelector(".settings-panel").getBoundingClientRect().top'),true);
-        await screenshot(`${label}-sticky-save`,undefined,true);
+        await evaluate('window.scrollTo(0,0)');await screenshot(`${label}-header-create`);
         await navigate(`host/lobby/?gameId=${id}&example=survey-ten`);await until('!!document.querySelector(".host-lobby")');
-        assert.equal(await evaluate('document.querySelector(".qr-container svg").getAttribute("width")'),'150');
+        assert.equal(await evaluate('document.querySelector(".qr-container svg").getAttribute("width")'),'160');
         assert.equal(await evaluate('document.querySelector(".qr-container title").textContent'),'Scan to join this survey');
-        await click('Present lobby');assert.equal(await evaluate('!!document.querySelector(".present-lobby")'),true);
-        assert.equal(await evaluate('document.querySelector(".present-lobby h1").textContent'),'Ten-choice Survey demo');
-        assert.equal(await evaluate('document.querySelector(".qr-container svg").getAttribute("width")'),'224');
+        assert.equal(await evaluate('document.querySelector(".host-lobby h1").textContent'),'Ten-choice Survey demo');
+        const lobby=await evaluate('(() => {const box=s=>document.querySelector(s).getBoundingClientRect();return {qr:box(".qr-container").bottom,code:box(".code-panel").top,width:box(".host-lobby").width,codeSize:parseFloat(getComputedStyle(document.querySelector(".session-code strong")).fontSize),separate:document.body.textContent.includes("Present lobby")}})()');
+        assert.ok(lobby.qr<=lobby.code);assert.equal(lobby.separate,false);assert.ok(lobby.codeSize<=40);if(size==='desktop')assert.equal(lobby.width,600);
         assert.equal(await evaluate('document.querySelector(".host-lobby .primary").disabled'),false);
-        await inspectScreen(`${label}-present-lobby`);await screenshot(`${label}-present-lobby`);
-        await click('Exit presentation');assert.equal(await evaluate('document.querySelector(".present-lobby")===null'),true);
+        await inspectScreen(`${label}-single-lobby`);await screenshot(`${label}-single-lobby`);
         await navigate('join/?code=600123&example=quiz-ten');await input('#nickname','Scroll attendee');await click('Join Game');await until('!!document.querySelector(".attendee-question")');
         assert.equal(await evaluate('document.querySelector(".answers").classList.contains("long-options")'),true);
         assert.equal(await evaluate('getComputedStyle(document.querySelector(".answers")).gridTemplateColumns.split(" ").length'),1);
@@ -584,7 +627,7 @@ try {
           await until('!!document.querySelector(".author-content:not(:disabled)")');
           assert.equal(await evaluate('document.querySelector(".question-duration").textContent'),'45s');
           assert.equal(await evaluate('document.querySelector("#quiz-title").value'),`Copy - Timed ${mode}`);
-          await submitAuthor();await until('!!document.querySelector(".host-lobby")');
+          await click('Open Lobby');await until('!!document.querySelector(".host-lobby")');
           await evaluate('window.__quizcrowdFixture.phase("question")');
           await pointerClick('document.querySelector(".small-brand")');await until('!!document.querySelector(".session-open")');
           await pointerClick('document.querySelector(".session-open")');await until('!!document.querySelector(".readonly-notice")');
@@ -602,7 +645,7 @@ try {
         assert.equal(await evaluate('document.querySelector("dialog").matches(":modal")'),true);
         assert.equal(await evaluate('document.activeElement.getAttribute("aria-label")'),'Close dialog');
         assert.deepEqual(await evaluate('[...document.querySelectorAll("dialog a")].map(e=>({href:e.href,target:e.target,rel:e.rel}))'),[
-          {href:'https://tr.linkedin.com/in/mustafaasiroglu',target:'_blank',rel:'noopener noreferrer'},
+          {href:'https://www.linkedin.com/in/mustafaasiroglu',target:'_blank',rel:'noopener noreferrer'},
           {href:'https://github.com/mustafaasiroglu/quizcrowd-fabric',target:'_blank',rel:'noopener noreferrer'},
           {href:'https://github.com/mustafaasiroglu/quizcrowd-fabric/issues/new',target:'_blank',rel:'noopener noreferrer'},
         ]);
@@ -674,7 +717,7 @@ try {
         assert.equal(await evaluate('document.querySelector(".author-session-actions .primary").disabled'),false);
         await inspectScreen(`${theme}-${size}-owner-finished`);await screenshot(`${theme}-${size}-owner-finished`);
         await navigate(`host/item/?gameId=${id}&example=quiz-ten`);await until('!!document.querySelector(".readonly-notice")');
-        await click('Join As Attendee');await until('!!document.querySelector("#nickname")');
+        await click('Attend');await until('!!document.querySelector("#nickname")');
         await evaluate('window.__quizcrowdFixture.phase("finished")');await input('#nickname','Late arrival');await click('Join Game');
         await until('document.querySelector("[role=alert]")?.textContent.includes("not accepting new attendees")');
         assert.equal(await evaluate('sessionStorage.getItem("quizcrowd-attendee-credential")'),null);
@@ -697,13 +740,13 @@ try {
           await click('Remove question 1 option 10');await click('Add option');await input('#option-0-9','Choice 10 | \\ literal');
           if(mode==='quiz')await pointerClick('document.querySelector(\'[aria-label="Question 1, correct option 10"]\')');
           else await click('Add Other to question 1');
-          await assertFilledForeground('.author-submit .primary');
+          await assertFilledForeground('.author-session-actions .primary');
           await inspectScreen(`${label}-editor`);await screenshot(`${label}-editor`);
           await submitAuthor();await until('!!document.querySelector(".host-lobby")');
           const saved=await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="create").draft.questions[0]');
           assert.equal(saved.options.length,10);assert.equal(saved.correctIndex,mode==='quiz'?9:null);
-          assert.equal(await evaluate('document.querySelector(".host-lobby h1").textContent'),'Waiting for Users');
-          assert.equal(await evaluate('document.querySelector(".game-context").textContent'),`Ten-choice ${mode}`);
+          assert.equal(await evaluate('document.querySelector(".host-lobby h1").textContent'),`Ten-choice ${mode}`);
+          assert.equal(await evaluate('document.querySelector(".host-lobby .game-context")===null'),true);
           assertJoinChecksum(await evaluate('document.querySelector(".session-code strong").textContent'));
           assert.ok(await evaluate('document.querySelector(".host-lobby").textContent.includes("Share this code with attendees")'));
           assert.ok(await evaluate('document.querySelector(".host-lobby").textContent.includes("4 attendees joined")'));
@@ -748,12 +791,13 @@ try {
         const layout = await evaluate(`(() => {
           const content=document.querySelector('.author-content'),panel=document.querySelector('.settings-panel'),a=content.getBoundingClientRect(),b=panel.getBoundingClientRect();
           const label=document.querySelector('.shared-duration-choice > label').getBoundingClientRect(),input=document.querySelector('#shared-duration').getBoundingClientRect();
-          return {domFirst:!!(content.compareDocumentPosition(panel)&Node.DOCUMENT_POSITION_FOLLOWING),contentBottom:a.bottom,contentTop:a.top,settingsTop:b.top,submitTop:document.querySelector('.author-submit').getBoundingClientRect().top,inline:Math.abs(label.top+label.height/2-input.top-input.height/2),inputWidth:input.width,
+          return {domFirst:!!(content.compareDocumentPosition(panel)&Node.DOCUMENT_POSITION_FOLLOWING),contentBottom:a.bottom,contentTop:a.top,settingsTop:b.top,submitBottom:document.querySelector('.author-session-actions').getBoundingClientRect().bottom,inline:Math.abs(label.top+label.height/2-input.top-input.height/2),inputWidth:input.width,
             groups:[...panel.querySelectorAll('.settings-group')].map(e=>{const s=getComputedStyle(e);return {border:s.borderTopWidth,color:s.borderTopColor,padding:parseFloat(s.paddingTop)}})};
         })()`);
         assert.equal(layout.domFirst, true);
         if (size === 'mobile') assert.ok(layout.settingsTop >= layout.contentBottom, 'questions must appear before settings in narrow layouts');
-        else { assert.ok(Math.abs(layout.submitTop-layout.contentTop)<=1,'desktop submit aligns with content');assert.ok(layout.settingsTop>layout.submitTop+48,'settings appear beneath the sticky submit'); }
+        else assert.ok(Math.abs(layout.settingsTop-layout.contentTop)<=1,'desktop settings align with content');
+        assert.ok(layout.submitBottom<layout.contentTop,'single header action appears above form');
         assert.ok(layout.inline <= 1); assert.equal(layout.inputWidth, 48);
         assert.equal(await evaluate(`(() => {const input=document.querySelector('#shared-duration'),control=input.closest('.duration'),clock=control.querySelector('svg'),unit=control.lastElementChild,r=control.getBoundingClientRect();return clock!==null&&unit.textContent==='s'&&unit.getBoundingClientRect().right<r.right&&getComputedStyle(control).borderTopWidth==='1px';})()`),true);
         assert.equal(layout.groups.length, 4);
@@ -1182,7 +1226,8 @@ try {
         assert.deepEqual(await evaluate('[...document.querySelectorAll(\'input[id^="option-"]\')].map(e=>e.value)'),['','']);
         assert.equal(await evaluate('document.querySelector("form").checkValidity()'),false);
         await chooseSurveyType('text');
-        await submitAuthor(); await until('!!document.querySelector(".host-lobby")');
+        assert.equal(await evaluate('document.querySelector(".author-session-actions").textContent'),'Open Lobby');
+        await click('Open Lobby'); await until('!!document.querySelector(".host-lobby")');
         await evaluate('window.__quizcrowdFixture.phase("question")');
         await pointerClick('document.querySelector(".small-brand")'); await until('!!document.querySelector(".session-open")');
         await pointerClick('document.querySelector(".session-open")'); await until('!!document.querySelector(".readonly-notice")');

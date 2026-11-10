@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { AnswerSubmission, AuthorView, Draft, GameView, QuizSummary, SettingsView } from '@rayfin-app/shared';
 import type { OpaqueSession } from '@microsoft/rayfin-auth';
 import { call, connect, type Connection } from './lib/rayfin-client';
-import { AuthorEditor, blankDraft } from './components/AuthorEditor';
+import { AuthorEditor, blankDraft, sameDraftContent } from './components/AuthorEditor';
 import { GameScreen } from './components/GameScreen';
 import { Icon } from './components/Icon';
 import { ThemeSwitch } from './components/ThemeSwitch';
@@ -291,8 +291,8 @@ export default function App() {
         </section>
       </div>}
       {page === 'author' && signedIn && !authorReady && <p role="status">{error ? 'Session unavailable.' : 'Loading editor...'}</p>}
-      {page === 'author' && signedIn && authorReady && <AuthorEditor key={routeKey} draft={draft} onChange={setDraft} editing={!!editing} readOnly={readOnly} anonymousEnabled={!!settings?.anonymousEnabled} busy={busy} onBack={home} onHost={editing ? () => host(editing) : undefined}
-        onJoin={readOnly && author ? () => navigate({ page: 'join', invitation: author.code }) : undefined} joinUnavailableReason={joinUnavailableReason}
+      {page === 'author' && signedIn && authorReady && <AuthorEditor key={routeKey} draft={draft} onChange={setDraft} editing={!!editing} dirty={!!author && !sameDraftContent(draft, author.draft)} readOnly={readOnly} anonymousEnabled={!!settings?.anonymousEnabled} busy={busy} onBack={home} onHost={editing ? () => host(editing) : undefined}
+        onJoin={readOnly && author && author.phase !== 'lobby' ? () => navigate({ page: 'join', invitation: author.code }) : undefined} joinUnavailableReason={joinUnavailableReason}
         onRevokePublic={editing && draft.visibility === 'public' ? () => void run(async (current) => {
         await call(connection!, { command: 'visibility', id: editing, visibility: 'internal' });
         if (current()) {

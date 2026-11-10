@@ -45,7 +45,7 @@ DOM changes into the platform page.
 | Join | Narrow card, six-digit numeric string code including leading zeros, separate nickname step; old links resolve; no pre-join preview action |
 | Author | Wide title/questions column with white Light surfaces or dark indigo surfaces; compact question cards, correctness controls, options and reordering |
 | Settings | Right sidebar on desktop, after the question/content column on narrow layouts in both visual and DOM/tab order; Who can respond? first, then answer duration, late joins and Quiz-only answer reveal; no Content Type label/control |
-| Host lobby | Ordinary compact 448px card retained; optional Present lobby enlarges the title/code/QR with join guidance, attendee count and guarded Start; Exit presentation restores compact view |
+| Host lobby | Single responsive card up to 600px wide; session title first, QR above code and URL, attendee count and guarded Start; no separate presentation mode |
 | Attendee | Waiting card, full-width timer (sticky while scrolling on mobile), colored answer choices, submitted-answer state and server-projected reveal; long answer text switches the grid to one column |
 | Host question/results | Centered question card, colored options, timer/answer count, reveal, leaderboard and next/final controls |
 | Finish | Quiz keeps its podium/rankings; Survey shows per-question aggregate summaries and Back to Home, never a score/podium |
@@ -64,8 +64,15 @@ Decorative shape travel is slowed from 14s to 28s, with peak opacity reduced
 from .6 to .25; the background gradient cycle is 30s instead of 15s.
 The answer colors themselves are unchanged by this animation adjustment.
 
-The single **Create & Open Lobby** / **Save & Open Lobby** submit action is
-sticky above Settings on desktop and at the top of the form on narrow screens.
+The single lobby action is in the page header and is not sticky. New items use
+**Create & Open Lobby**. Existing editable items use **Open Lobby** when unchanged
+and **Save & Open** when persisted content differs from the saved draft.
+Reverting changes returns to **Open Lobby** without resetting the draft.
+Comparison includes question order, options, correctness, Survey settings,
+audience and timing, normalizing legacy duration metadata and server-trimmed text.
+The header submit button is explicitly associated with the form so native
+validation still runs. Clean opens do not submit an edit; failed saves retain
+the draft and error instead of navigating.
 Questions still precede Settings in DOM/tab and visual order; only **Add Question**
 remains below them. Native form validation, busy/public acknowledgement guards
 and readonly locks still apply. Readonly views omit editing hints.
@@ -159,8 +166,9 @@ server ownership/admin checks; an arbitrary `returnTo` is never followed.
 Anonymous and non-admin callers cannot use the admin form, and hiding its
 header shortcut is not authorization. Sign-out clears attendee and private UI state.
 
-Owner read-only **View Live Quiz/Survey** screens keep **Open Lobby** and offer
-**Join As Attendee**. This navigates to `/join/?code=<session-code>` using the
+Owner read-only **View Live Quiz/Survey** screens keep **Open Lobby** and, after
+the session has started, offer **Attend**. A response-locked lobby stays readonly
+without showing this started-session action. Attend navigates to `/join/?code=<session-code>` using the
 saved canonical code; it does not join, start the session or reuse host identity
 as an attendee credential. The normal nickname, Entra/guest and server audience
 checks still run. A finished session, or a started session with late joining
@@ -207,7 +215,7 @@ button is presented. Surveys still have no correctness key or score.
 The shared footer reads **QuizCrowd for Microsoft Fabric · About**. About opens
 the existing native modal pattern, with labelled heading, inert background,
 focus containment/restoration and close-button/Escape/backdrop dismissal.
-It links the author's [public Microsoft LinkedIn profile](https://tr.linkedin.com/in/mustafaasiroglu),
+It links the author's [public Microsoft LinkedIn profile](https://www.linkedin.com/in/mustafaasiroglu),
 the canonical repository and its enabled issue-creation page. The profile URL
 was confirmed from the publicly indexed LinkedIn Microsoft profile; direct
 automated LinkedIn requests return HTTP 999. About accurately says **source code
