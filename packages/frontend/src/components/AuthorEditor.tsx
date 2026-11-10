@@ -67,9 +67,9 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
           </div>)}
             {draft.mode === 'survey' && q.survey?.other && <div className="option-editor other-option"><span>Other <span className="small muted">(written response)</span></span>{!readOnly && <button type="button" className="icon-button delete-action" aria-label={`Remove question ${i + 1} Other`} disabled={q.options.length < 2} onClick={() => updateQuestion(i, { survey: { other: false, allowMultiple: !!q.survey?.allowMultiple } })}><Icon name="trash" /></button>}</div>}
           </div>
-          {draft.mode === 'quiz' && <p className="muted small option-hint">Select the circle beside the correct answer.</p>}
           {!readOnly && q.options.length < 4 && <button type="button" className="text-button" onClick={() => updateQuestion(i, { options: [...q.options, ''] })}><Icon name="plus" />Add option</button>}
           {!readOnly && draft.mode === 'survey' && !q.survey?.other && <button type="button" className="text-button add-other" aria-label={`Add Other to question ${i + 1}`} onClick={() => updateQuestion(i, { survey: { other: true, allowMultiple: !!q.survey?.allowMultiple } })}><Icon name="plus" />Add Other</button>}
+          {draft.mode === 'quiz' && <p className="muted small option-hint">Select the circle beside the correct answer.</p>}
         </fieldset>)}</div>
         {!readOnly && <div className="editor-actions"><button type="button" className="outline-primary" disabled={draft.questions.length >= 40} onClick={() => {
           onChange({ ...draft, answerDuration: timing, questions: [...draft.questions, blankQuestion(timing.seconds)] });
@@ -81,7 +81,7 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
         <fieldset disabled={readOnly || busy}><legend className="sr-only">Session settings</legend>
           <div className="settings-group"><fieldset className="audience-settings"><legend>Who can respond?</legend>
             <label className="check"><input type="radio" name="audience" value="internal" checked={draft.visibility === 'internal'} onChange={() => onChange({ ...draft, visibility: 'internal', publicAcknowledged: false })} /><span>Only people in my organization<span className="small muted audience-description">Requires sign-in with organization account</span></span></label>
-            <label className="check"><input type="radio" name="audience" value="public" checked={draft.visibility === 'public'} disabled={!anonymousEnabled} onChange={() => onChange({ ...draft, visibility: 'public', publicAcknowledged: false })} /><span>{anonymousEnabled ? 'Anyone with link' : 'Anyone with link (Disabled)'}<span className="small muted audience-description">Anonymous response, doesn't require sign-in</span></span></label>
+            <label className="check"><input type="radio" name="audience" value="public" checked={draft.visibility === 'public'} disabled={!anonymousEnabled} onChange={() => onChange({ ...draft, visibility: 'public', publicAcknowledged: false })} /><span>{anonymousEnabled ? 'Anyone with link' : 'Anyone with link (disabled by admin)'}<span className="small muted audience-description">Anonymous response, doesn't require sign-in</span></span></label>
           </fieldset>
           {draft.visibility === 'public' && <div className="warning"><p>{PUBLIC_WARNING}</p><label className="check"><input type="checkbox" checked={draft.publicAcknowledged} onChange={(e) => onChange({ ...draft, publicAcknowledged: e.target.checked })} required />I understand and choose public access.</label></div>}</div>
           <div className="settings-group"><fieldset className="duration-settings"><legend>Answer duration</legend>
@@ -91,17 +91,16 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
             <label className="check"><input type="radio" name="answer-duration" value="custom" checked={timing.mode === 'custom'} onChange={() => setDuration('custom')} />Customize per question</label>
             {timing.mode === 'custom' && <p className="small muted">Set the answer time at the top of each question.</p>}
           </fieldset></div>
-          <div className="settings-group"><fieldset className="late-join-settings"><legend>Allow Late Joins?</legend>
-            <label className="check"><input type="radio" name="late-join" value="deny" checked={!draft.lateJoin} onChange={() => onChange({ ...draft, lateJoin: false })} />Don&apos;t Allow Late Join</label>
-            <label className="check"><input type="radio" name="late-join" value="allow" checked={draft.lateJoin} onChange={() => onChange({ ...draft, lateJoin: true })} />Allow Join After Game Start</label>
+          <div className="settings-group"><fieldset className="late-join-settings"><legend>Allow late joins?</legend>
+            <label className="check"><input type="radio" name="late-join" value="deny" checked={!draft.lateJoin} onChange={() => onChange({ ...draft, lateJoin: false })} />Don&apos;t allow late join</label>
+            <label className="check"><input type="radio" name="late-join" value="allow" checked={draft.lateJoin} onChange={() => onChange({ ...draft, lateJoin: true })} />Allow join after game start</label>
           </fieldset></div>
-          <div className="settings-group"><fieldset className="answer-reveal-settings" disabled={draft.mode === 'survey'}><legend>Show Correct Answers?</legend>
-            <label className="check"><input type="radio" name="answer-reveal" value="wait_all" checked={draft.showAnswer === 'wait_all'} onChange={() => onChange({ ...draft, showAnswer: 'wait_all' })} />Wait for All Users</label>
-            <label className="check"><input type="radio" name="answer-reveal" value="after_response" checked={draft.showAnswer === 'after_response'} onChange={() => onChange({ ...draft, showAnswer: 'after_response' })} />Show After User Response</label>
-            <label className="check"><input type="radio" name="answer-reveal" value="never" checked={draft.showAnswer === 'never'} onChange={() => onChange({ ...draft, showAnswer: 'never' })} />Never Show</label>
+          {draft.mode === 'quiz' && <div className="settings-group"><fieldset className="answer-reveal-settings"><legend>Show correct answers?</legend>
+            <label className="check"><input type="radio" name="answer-reveal" value="wait_all" checked={draft.showAnswer === 'wait_all'} onChange={() => onChange({ ...draft, showAnswer: 'wait_all' })} />Wait for all users</label>
+            <label className="check"><input type="radio" name="answer-reveal" value="after_response" checked={draft.showAnswer === 'after_response'} onChange={() => onChange({ ...draft, showAnswer: 'after_response' })} />Show after user response</label>
+            <label className="check"><input type="radio" name="answer-reveal" value="never" checked={draft.showAnswer === 'never'} onChange={() => onChange({ ...draft, showAnswer: 'never' })} />Never show</label>
           </fieldset>
-          {draft.mode === 'survey' && <p className="muted small">Disabled for surveys: responses have no correct answer or score.</p>}
-          </div>
+          </div>}
         </fieldset>
       </aside>
     </form>

@@ -44,7 +44,7 @@ DOM changes into the platform page.
 | Home | Compact equal-width (260px desktop) icon/title/description New Live Quiz / New Live Survey / Join with Code actions, not row-stretched; matching borders, 12px padding/radius and subtle 1.01 hover scale; Recent Items with Your recent quiz and surveys.; stacked on mobile |
 | Join | Narrow card, six-digit numeric string code including leading zeros, separate nickname step; old links resolve; no pre-join preview action |
 | Author | Wide title/questions column with white Light surfaces or dark indigo surfaces; compact question cards, correctness controls, options and reordering |
-| Settings | Right sidebar on desktop, after the question/content column on narrow layouts in both visual and DOM/tab order; Who can respond? first, then answer duration, late joins and answer reveal; no Content Type label/control |
+| Settings | Right sidebar on desktop, after the question/content column on narrow layouts in both visual and DOM/tab order; Who can respond? first, then answer duration, late joins and Quiz-only answer reveal; no Content Type label/control |
 | Host lobby | 448px card, prominent session code, copy code/link, white QR panel, joined-player chips and start action |
 | Attendee | Waiting card, full-width timer, colored answer choices, submitted-answer state and server-projected reveal |
 | Host question/results | Centered question card, colored options, timer/answer count, reveal, leaderboard and next/final controls |
@@ -72,7 +72,16 @@ collapses its two columns on smaller screens.
 Settings groups use compact shared spacing and translucent horizontal borders
 between groups. Late-join and answer-reveal choices are always-visible native
 radio groups, not dropdowns: their option values and behavior are unchanged.
-Survey correctness choices and started/answered-session settings remain disabled.
+Surveys omit the entire answer-reveal group, including its heading and help,
+in create/edit/read-only views. No empty group or separator remains.
+Started/answered-session settings remain disabled.
+Settings headings and choices use first-word capitalization, including
+**Allow late joins?**, **Don't allow late join**, **Allow join after game start**,
+**Show correct answers?**, **Wait for all users**, **Show after user response**
+and **Never show**. The stored enum values and server reveal rules are unchanged.
+Quiz questions place **Select the circle beside the correct answer.** after
+the options and the **Add option** action in both DOM and visual order.
+Surveys never show this correctness helper.
 
 ## URLs, history and request lifecycle
 
@@ -148,7 +157,8 @@ question submissions, not the number of people.
 
 New Live Survey creates a Survey; New Live Quiz creates a Quiz. Content Type is
 fixed by the creation action and not shown in Settings; API updates reject type changes and
-duplicate preserves the source type. Show Correct Answers stays disabled for surveys.
+duplicate preserves the source type. Show correct answers is a Quiz-only
+settings group; hiding it for Surveys does not mutate their stored reveal setting.
 The organization audience requires tenant-bound Entra app access and includes
 authorized directory guests, not anonymous app guests. Public selection still
 requires the global switch, warning acknowledgement and deployment release gate.
@@ -157,7 +167,7 @@ with **Requires sign-in with organization account**, then **Anyone with link**
 with **Anonymous response, doesn't require sign-in**. These shorter labels do
 not change the Entra directory-guest semantics or enable anonymous access.
 When the publisher disables public attendance, the option title becomes
-**Anyone with link (Disabled)** and the separate publisher-disabled paragraph
+**Anyone with link (disabled by admin)** and the separate publisher-disabled paragraph
 is omitted. The anonymous-response description remains; the native radio is
 still disabled and the server/global/public-acknowledgement boundaries are unchanged.
 

@@ -11,7 +11,7 @@ const game: GameView = {
 };
 let ui: {
   renderGame(game: GameView, host?: boolean): string;
-  renderEditor(draft?: Partial<Draft>, anonymousEnabled?: boolean, readOnly?: boolean): string;
+  renderEditor(draft?: Partial<Draft>, anonymousEnabled?: boolean, readOnly?: boolean, editing?: boolean): string;
   removeOption(question: Question, index: number): Question;
   renderIcon(): string;
 };
@@ -34,8 +34,8 @@ beforeAll(async () => {
         export { removeOption };
         const noop = () => {};
         export function renderIcon() { return renderToStaticMarkup(h(Icon, {name:'settings'})); }
-        export function renderEditor(patch = {}, anonymousEnabled = false, readOnly = false) {
-          return renderToStaticMarkup(h(AuthorEditor, {draft:{...blankDraft(),...patch},onChange:noop,editing:false,anonymousEnabled,readOnly,busy:false,onSave:noop,onBack:noop}));
+        export function renderEditor(patch = {}, anonymousEnabled = false, readOnly = false, editing = false) {
+          return renderToStaticMarkup(h(AuthorEditor, {draft:{...blankDraft(),...patch},onChange:noop,editing,anonymousEnabled,readOnly,busy:false,onSave:noop,onBack:noop}));
         }
         export function renderGame(game, host = false) {
           return renderToStaticMarkup(h(GameScreen,{game,host,guest:false,nickname:'Alex',seconds:10,joinUrl:'https://test.invalid/?quiz=game',busy:false,onControl:noop,onAnswer:noop,onSurveyAnswer:noop,onHome:noop,onCopyError:noop}));
@@ -130,9 +130,9 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
   ] as const)('uses the exact ordered audience copy in %s, readonly=%s', (mode, readOnly) => {
     const editor = ui.renderEditor({ mode }, false, readOnly);
     expect(editor.indexOf('Only people in my organization')).toBeLessThan(editor.indexOf('Anyone with link'));
-    expect(editor).toContain('Anyone with link (Disabled)');
+    expect(editor).toContain('Anyone with link (disabled by admin)');
     expect(editor).not.toContain('Public attendance is disabled by the publisher.');
-    expect(ui.renderEditor({ mode }, true, readOnly)).not.toContain('Anyone with link (Disabled)');
+    expect(ui.renderEditor({ mode }, true, readOnly)).not.toContain('Anyone with link (disabled by admin)');
     expect(editor).toContain('Requires sign-in with organization account');
     expect(editor).toContain('Anonymous response, doesn&#x27;t require sign-in');
     expect(editor).toMatch(/<input(?=[^>]*name="audience")(?=[^>]*value="internal")(?=[^>]*checked="")[^>]*>/);
@@ -141,7 +141,7 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
   it('uses native keyboard-accessible answer radios and omits them for surveys', () => {
     expect(ui.renderEditor()).toContain('type="radio"');
     expect(ui.renderEditor({ mode: 'survey' })).not.toContain('correct option');
-    expect(ui.renderEditor({ mode: 'survey' })).toContain('Disabled for surveys');
+    expect(ui.renderEditor({ mode: 'survey' })).not.toContain('answer-reveal-settings');
   });
   it('renders the Forms-style settings sidebar and started-session read-only state', () => {
     const editable = ui.renderEditor();
@@ -172,10 +172,30 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     for (const [name, value] of [['late-join', 'allow'], ['answer-reveal', 'never']]) {
       expect(editable).toMatch(new RegExp(`<input(?=[^>]*name="${name}")(?=[^>]*value="${value}")(?=[^>]*checked="")[^>]*>`));
     }
-    expect(ui.renderEditor({ mode: 'survey' })).toContain('class="answer-reveal-settings" disabled=""');
+    expect(ui.renderEditor({ mode: 'survey' })).not.toContain('answer-reveal-settings');
     const readonly = ui.renderEditor({ lateJoin: true, showAnswer: 'after_response' }, true, true);
     expect(readonly).toContain('class="author-content" disabled=""');
     expect(readonly).toMatch(/<input(?=[^>]*name="answer-reveal")(?=[^>]*value="after_response")(?=[^>]*checked="")[^>]*>/);
+  });
+  it.each([[false, false], [true, false], [true, true]])('keeps sentence-case quiz settings and post-option help, editing=%s readonly=%s', (editing, readOnly) => {
+    const questions = [{ text: 'Question', options: ['A', 'B', 'C'], correctIndex: 0, duration: 20 }];
+    const quiz = ui.renderEditor({ questions }, false, readOnly, editing);
+    for (const text of ['Allow late joins?', 'Don&#x27;t allow late join', 'Allow join after game start', 'Show correct answers?', 'Wait for all users', 'Show after user response', 'Never show']) {
+      expect(quiz).toContain(text);
+    }
+    expect(quiz).toContain('answer-reveal-settings');
+    const hint = quiz.indexOf('Select the circle beside the correct answer.');
+    expect(hint).toBeGreaterThan(quiz.indexOf('class="option-editor-grid"'));
+    if (!readOnly) {
+      expect(quiz).toContain('Add option</button>');
+      expect(hint).toBeGreaterThan(quiz.indexOf('Add option</button>'));
+    }
+    const survey = ui.renderEditor({ mode: 'survey', questions: questions.map(q => ({ ...q, correctIndex: null })) }, false, readOnly, editing);
+    expect(survey).not.toContain('answer-reveal-settings');
+    expect(survey).not.toContain('Show correct answers?');
+    expect(survey).not.toContain('Disabled for surveys');
+    expect(survey).not.toContain('Select the circle beside the correct answer.');
+    expect(survey.match(/class="settings-group"/g)).toHaveLength(3);
   });
   it('keeps equal-valued custom mode selected and visible in read-only views', () => {
     const locked = ui.renderEditor({ answerDuration: { mode: 'custom', seconds: 35 },

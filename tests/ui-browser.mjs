@@ -106,8 +106,31 @@ async function inspectScreen(name) {
   })()`);
   if (audience) assert.deepEqual(audience.options, [
     {value:'internal', title:'Only people in my organization', description:'Requires sign-in with organization account'},
-    {value:'public', title:audience.disabled?'Anyone with link (Disabled)':'Anyone with link', description:"Anonymous response, doesn't require sign-in"},
+    {value:'public', title:audience.disabled?'Anyone with link (disabled by admin)':'Anyone with link', description:"Anonymous response, doesn't require sign-in"},
   ], `${name}: exact audience order and copy`);
+  const editor = await evaluate(`(() => {
+    const root=document.querySelector('.author');if(!root)return null;
+    return {survey:root.querySelector('h1').textContent.endsWith('Survey'),
+      legends:[...root.querySelectorAll('.settings-group > fieldset > legend')].map(e=>e.textContent),
+      late:[...root.querySelectorAll('input[name="late-join"]')].map(e=>e.labels[0].textContent),
+      reveal:[...root.querySelectorAll('input[name="answer-reveal"]')].map(e=>e.labels[0].textContent),
+      emptyGroups:[...root.querySelectorAll('.settings-group')].filter(e=>!e.textContent.trim()).length,
+      hints:[...root.querySelectorAll('.question-editor')].map(q=>{
+        const hint=q.querySelector('.option-hint'),grid=q.querySelector('.option-editor-grid'),add=[...q.querySelectorAll('button')].find(e=>e.textContent.trim()==='Add option');
+        return {exists:!!hint,afterOptions:!hint||!!(grid.compareDocumentPosition(hint)&Node.DOCUMENT_POSITION_FOLLOWING),
+          afterAdd:!hint||!add||!!(add.compareDocumentPosition(hint)&Node.DOCUMENT_POSITION_FOLLOWING),
+          belowAdd:!hint||!add||hint.getBoundingClientRect().top>=add.getBoundingClientRect().bottom};
+      })};
+  })()`);
+  if (editor) {
+    assert.deepEqual(editor.legends, ['Who can respond?', 'Answer duration', 'Allow late joins?', ...(editor.survey ? [] : ['Show correct answers?'])]);
+    assert.deepEqual(editor.late, ["Don't allow late join", 'Allow join after game start']);
+    assert.deepEqual(editor.reveal, editor.survey ? [] : ['Wait for all users', 'Show after user response', 'Never show']);
+    assert.equal(editor.emptyGroups, 0);
+    for (const hint of editor.hints) {
+      assert.equal(hint.exists, !editor.survey); assert.ok(hint.afterOptions && hint.afterAdd && hint.belowAdd, `${name}: helper must follow options and Add option in DOM and visually`);
+    }
+  }
   const dialog = await evaluate(`(() => {const e=document.querySelector('dialog[open]');if(!e)return null;const r=e.getBoundingClientRect(),s=getComputedStyle(e);return {center:r.top+r.height/2,expected:innerHeight/2,top:r.top,height:r.height,position:s.position,inset:s.inset,margin:s.margin,scrollY,viewport:visualViewport.height};})()`);
   if (dialog) assert.ok(Math.abs(dialog.center - dialog.expected) <= 1, `${name}: modal must be centered in the actual viewport: ${JSON.stringify(dialog)}`);
   const layout = await evaluate(`({ width:innerWidth, scroll:document.documentElement.scrollWidth, page:document.querySelector('main').className, unnamed:[...document.querySelectorAll('input,textarea,select')].filter(e => e.getBoundingClientRect().width && !e.labels?.length && !e.getAttribute('aria-label')).map(e=>e.outerHTML), themes:[...document.querySelectorAll('[aria-label="Color theme"] button')].map(e=>e.getAttribute('aria-label')) })`);
@@ -249,6 +272,7 @@ try {
           assert.equal(await evaluate('getComputedStyle(document.querySelector(".question-settings svg")).animationName'), 'none');
         }
         await screenshot(`${theme}-${size}-settings-gear-editor`);
+        await screenshot(`${theme}-${size}-survey-settings-copy`);
         await screenshot(`${theme}-${size}-settings-gear-detail`, '.question-settings summary svg');
         await screenshot(`${theme}-${size}-settings-heading-detail`, '.settings-panel h2 svg');
         await cdp.call('Input.dispatchKeyEvent', {type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27}, session);
@@ -281,7 +305,7 @@ try {
         assert.equal(await evaluate('document.querySelector(".shared-duration-choice > label").textContent'), 'Same for all questions');
         assert.equal(await evaluate('document.querySelectorAll(".settings-panel select").length'), 0);
         assert.equal(await evaluate('document.body.textContent.includes("Public attendance is disabled by the publisher.")'), false);
-        assert.equal(await evaluate('document.querySelector(\'input[value="public"]\').labels[0].querySelector("span").firstChild.textContent'), 'Anyone with link (Disabled)');
+        assert.equal(await evaluate('document.querySelector(\'input[value="public"]\').labels[0].querySelector("span").firstChild.textContent'), 'Anyone with link (disabled by admin)');
         await evaluate('document.querySelector(".author-content button[type=submit]").focus()');
         await cdp.call('Input.dispatchKeyEvent', {type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9}, session);
         await cdp.call('Input.dispatchKeyEvent', {type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9}, session);
@@ -299,6 +323,9 @@ try {
           await cdp.call('Input.dispatchKeyEvent', {type:'keyUp',key,code:key,windowsVirtualKeyCode:code}, session);
         }
         assert.equal(await evaluate('document.querySelector(\'input[name="answer-reveal"]:checked\').value'), 'after_response');
+        await click('Remove question 1 option 1');
+        await inspectScreen(`${theme}-${size}-quiz-settings-copy`); await screenshot(`${theme}-${size}-quiz-settings-copy`);
+        await click('Add option');
         await inspectScreen(`${theme}-${size}-settings-layout`); await screenshot(`${theme}-${size}-settings-layout`);
         if (size === 'mobile' && theme === 'light') {
           await cdp.call('Emulation.setDeviceMetricsOverride', {width:320,height:740,deviceScaleFactor:1,mobile:false}, session);
@@ -570,8 +597,8 @@ try {
   await check('survey authoring preserves null keys and no-scoring completion', async () => {
     await navigate(); await click('New Live Survey');
     assert.equal(await evaluate('document.querySelectorAll(\'[aria-label*="correct option"]\').length'), 0);
-    assert.equal(await evaluate('document.querySelector(".answer-reveal-settings").disabled'), true);
-    assert.equal(await evaluate('[...document.querySelectorAll(".answer-reveal-settings input")].every(e=>e.matches(":disabled"))'), true);
+    assert.equal(await evaluate('document.querySelector(".answer-reveal-settings")===null'), true);
+    assert.equal(await evaluate('document.querySelectorAll(".settings-group").length'), 3);
     await input('#quiz-title', 'Team Survey'); await input('#question-0', 'How was the session?');
     for (const [i, option] of ['Great', 'Good', 'Okay', 'Needs work'].entries()) await input(`#option-0-${i}`, option);
     await click('Save & Open Lobby'); await until('!!document.querySelector(".host-lobby")');
@@ -629,6 +656,7 @@ try {
         await pointerClick('document.querySelector(".small-brand")'); await until('!!document.querySelector(".session-open")');
         await pointerClick('document.querySelector(".session-open")'); await until('!!document.querySelector(".readonly-notice")');
         assert.equal(await evaluate('document.querySelector(".question-settings input").matches(":disabled")'), true);
+        await inspectScreen(`${label}-survey-readonly-copy`); await screenshot(`${label}-survey-readonly-copy`);
       });
       await check(`${label}: survey multiple + Other picker, payload, polling and reload`, async () => {
         await navigate('join/?code=000123&example=survey-multiple');
