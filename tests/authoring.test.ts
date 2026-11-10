@@ -32,6 +32,28 @@ function fixture(mode: 'quiz' | 'survey' = 'quiz') {
   return { store, legacy, games: () => games, game: () => games[0] };
 }
 describe('six-digit codes and owner authoring transactions (test store)', () => {
+  it('authorizes written-response pages for the owner only, after survey results, without attendee aggregates', async () => {
+    const f = fixture('survey'), id = f.game().id;
+    await execute(f.store, { command: 'edit', id, draft: { ...draft, mode: 'survey', questions: [
+      { ...draft.questions[0], correctIndex: null, survey: { other: true, allowMultiple: false } },
+    ] } }, 'owner', '');
+    const page = { command: 'written', id, questionIndex: 0, offset: 0 };
+    await expect(execute(f.store, page, 'owner', '')).rejects.toThrow('completed');
+    const alice = await execute(f.store, { command: 'join', id, nickname: 'Alice' }, 'a', '', 1000) as { token: string };
+    const bob = await execute(f.store, { command: 'join', id, nickname: 'Bob' }, 'b', '', 1000) as { token: string };
+    await execute(f.store, { command: 'control', id, action: 'start', version: f.game().version }, 'owner', '', 2000);
+    await execute(f.store, { command: 'answer', id, questionIndex: 0, response: { options: [], other: '<script>Owner only</script>' } }, 'a', alice.token, 3000);
+    await execute(f.store, { command: 'answer', id, questionIndex: 0, response: { options: [0] } }, 'b', bob.token, 3100);
+    await execute(f.store, { command: 'host', id }, 'owner', '', 7100);
+    expect(await execute(f.store, page, 'owner', '')).toEqual({ questionIndex: 0, offset: 0, total: 1, values: ['<script>Owner only</script>'] });
+    for (const subject of [null, 'a', 'b', 'admin']) await expect(execute(f.store, page, subject, alice.token)).rejects.toThrow();
+    const attendee = await execute(f.store, { command: 'state', id }, 'b', bob.token, 7100);
+    for (const field of ['surveyResults', 'distribution', 'otherCount', 'rankings']) expect(attendee).not.toHaveProperty(field);
+    expect(JSON.stringify(attendee)).not.toContain('Owner only');
+    for (const patch of [{ offset: -1 }, { offset: 500 }, { questionIndex: 40 }, { questionIndex: 1 }]) {
+      await expect(execute(f.store, { ...page, ...patch }, 'owner', '')).rejects.toThrow();
+    }
+  });
   it('prefixes all five random digits with their sum modulo ten, preserving zeros', () => {
     for (let suffix = 0; suffix < 100000; suffix++) {
       random.value = suffix;
@@ -138,8 +160,12 @@ describe('six-digit codes and owner authoring transactions (test store)', () => 
     const owner = await execute(f.store, { command: 'edit', id: f.game().id }, 'owner', '');
     expect(owner).toMatchObject({ readOnly: true, draft: revised });
     await expect(execute(f.store, { command: 'edit', id: f.game().id, draft: revised }, 'owner', '')).rejects.toThrow('read-only');
-    expect(await execute(f.store, { command: 'state', id: f.game().id }, 'a', ticket.token, 3000)).toMatchObject({ myResponse: { options: [0, 1], other: 'Pipes | and \\ literal' }, otherCount: 1, distribution: [1, 1] });
+    const state = await execute(f.store, { command: 'state', id: f.game().id }, 'a', ticket.token, 3000);
+    expect(state).toMatchObject({ myResponse: { options: [0, 1], other: 'Pipes | and \\ literal' } });
+    expect(state).not.toHaveProperty('distribution');
+    expect(state).not.toHaveProperty('otherCount');
     const host = await execute(f.store, { command: 'host', id: f.game().id }, 'owner', '', 3000);
+    expect(host).toMatchObject({ distribution: [1, 1], otherCount: 1 });
     expect(JSON.stringify(host)).not.toContain('Pipes');
     for (const subject of [null, 'stranger']) {
       await expect(execute(f.store, { command: 'edit', id: f.game().id }, subject, '')).rejects.toThrow();
@@ -233,7 +259,7 @@ describe('six-digit codes and owner authoring transactions (test store)', () => 
     const again = setAnswerDuration(same, { ...getAnswerDuration(same), mode: 'custom' });
     again.questions.splice(0, 1);
     expect(getAnswerDuration(again)).toEqual({ mode: 'custom', seconds: 35 });
-    expect(getAnswerDuration({ questions: [] })).toEqual({ mode: 'same', seconds: 20 });
+    expect(getAnswerDuration({ questions: [] })).toEqual({ mode: 'same', seconds: 15 });
   });
   it('uses the saved question duration for real scoring', async () => {
     const f = fixture();

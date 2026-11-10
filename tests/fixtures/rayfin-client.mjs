@@ -4,7 +4,7 @@ import { copyTitle } from '@rayfin-app/shared';
 const parameters = new URLSearchParams(location.search);
 const previous = JSON.parse(sessionStorage.getItem('quizcrowd-test-fixture') ?? 'null');
 const requestedExample = parameters.get('example');
-const example = ['survey-multiple', 'survey-single', 'survey-other-only', 'survey-legacy-single-other', 'quiz-ten', 'survey-ten', 'survey-results', 'response-locked'].includes(requestedExample) ? requestedExample : previous?.example;
+const example = ['survey-multiple', 'survey-single', 'survey-other-only', 'survey-legacy-single-other', 'quiz-ten', 'survey-ten', 'survey-results', 'response-locked', 'showcase-quiz', 'showcase-survey'].includes(requestedExample) ? requestedExample : previous?.example;
 const stored = requestedExample && example !== previous?.example ? null : previous;
 let authenticated = stored?.authenticated ?? parameters.get('fixture') !== 'signed-out';
 const admin = stored?.admin ?? parameters.get('fixture') !== 'creator';
@@ -36,12 +36,28 @@ let myResponse;
 let surveyAnswers = {};
 let version = 1;
 const players = ['Alex', 'Sam', 'Taylor', 'Jordan'];
-if (!stored && example === 'response-locked') {
+if (!stored && example?.startsWith('showcase-')) {
+  const survey = example === 'showcase-survey';
+  currentCode = '600123';
+  currentDraft = { ...draft, title: survey ? 'Team Pulse: Building Better Together' : 'Innovation Week: The Big Team Quiz',
+    mode: survey ? 'survey' : 'quiz', lateJoin: true, questions: survey ? [
+      { text: 'What would help us do our best work next month?', options: ['More focus time', 'Cross-team workshops', 'Clearer priorities', 'Better documentation'],
+        correctIndex: null, duration: 90, survey: { other: true, allowMultiple: true } },
+      { text: 'What is one thing we should keep doing?', options: [], correctIndex: null, duration: 90, survey: { other: true, allowMultiple: false } },
+    ] : [
+      { text: 'What is the best first step before building a new idea?', options: ['Listen to customer needs', 'Add more features', 'Launch a big campaign', 'Follow the latest trend'], correctIndex: 0, duration: 60 },
+      { text: 'What makes an experiment useful?', options: ['A clear hypothesis', 'A large slide deck', 'A perfect first attempt', 'A long project name'], correctIndex: 0, duration: 60 },
+      { text: 'How do great teams learn faster?', options: ['Share what worked and what did not', 'Wait until everything is perfect', 'Avoid asking questions', 'Work in separate silos'], correctIndex: 0, duration: 60 },
+    ] };
+  players.splice(0, players.length, 'Maya', 'Leo', 'Sofia', 'Alex');
+  phase = parameters.get('stage') === 'finished' ? 'finished' : location.pathname.startsWith('/host/lobby/') ? 'lobby' : 'question';
+  questionIndex = phase === 'finished' ? currentDraft.questions.length - 1 : 0;
+} else if (!stored && example === 'response-locked') {
   myOption = 0;
 } else if (!stored && example === 'survey-results') {
   currentCode = '600123';
   currentDraft = { ...draft, title: 'Survey results demo', mode: 'survey', lateJoin: true, questions: [
-    { text: 'Which topics should we include?', options: ['Product sessions', 'Workshops'], correctIndex: null, duration: 120, survey: { other: true, allowMultiple: true } },
+    { text: 'Which topics should we include?', options: ['Product sessions', 'Workshops', 'Networking', 'Recordings'], correctIndex: null, duration: 120, survey: { other: true, allowMultiple: true } },
     { text: 'Share your feedback', options: [], correctIndex: null, duration: 120, survey: { other: true, allowMultiple: false } },
     { text: 'Which time works best?', options: ['Morning', 'Afternoon'], correctIndex: null, duration: 120 },
   ] };
@@ -96,30 +112,65 @@ function nextDemoCode() {
   throw new Error('Demo join-code space exhausted.');
 }
 function session() { return { isAuthenticated: authenticated, isAnonymous: !authenticated, user: authenticated ? { id: 'test-only-verified-subject' } : undefined }; }
+function resultResponses(index) {
+  if (example === 'showcase-survey') {
+    const feedback = [
+      'A monthly customer-story session would help us stay connected to real needs.',
+      'More time to share small experiments across teams.',
+      'A quiet hour without meetings each afternoon.',
+      'Pairing sessions with colleagues from another team.',
+      'A simple place to celebrate the lessons from our experiments.',
+      'Time for hands-on learning together.',
+    ];
+    if (index === 0) return Array.from({ length: 16 }, (_, i) => ({ options: [
+      ...(i < 10 ? [0] : []), ...(i % 2 === 0 ? [1] : []), ...(i >= 11 ? [2] : []), ...(i >= 13 ? [3] : []),
+    ], ...(i < feedback.length ? { other: feedback[i] } : {}) }));
+    return [
+      'Keep the Friday demos short, practical and open to everyone.',
+      'Our cross-team office hours make it easy to ask for help.',
+      'Celebrate small wins and share what we learned along the way.',
+      'Keep making space for thoughtful feedback before big decisions.',
+    ].map(other => ({ options: [], other }));
+  }
+  if (example === 'survey-results' && currentDraft.title === 'Survey results demo') {
+    if (index === 0) return [
+      { options: [0, 1], other: 'More networking time.' },
+      { options: [0, 1], other: '<img src=x onerror=alert(1)> This is literal feedback.' },
+      { options: [0, 3] },
+    ];
+    if (index === 1) return Array.from({ length: 23 }, (_, i) => ({ options: [],
+      other: i === 0 ? '<script>window.__surveyUnsafe=true</script>\nUseful feedback.' : `Written feedback ${i + 1}${i === 22 ? ' - ' + 'Long feedback '.repeat(30) : ''}` }));
+    return [];
+  }
+  return surveyAnswers[index] ? [surveyAnswers[index]] : [];
+}
 function view(attendee) {
   const q = currentDraft.questions[questionIndex];
-  const rankings = players.map((nickname, i) => ({ nickname, score: 2900 - i * 350, streak: i === 0 ? 3 : 1, rank: i + 1 }));
+  const rankings = players.map((nickname, i) => ({ nickname,
+    score: example === 'showcase-quiz' ? [4350, 4120, 3780, 3290][i] : 2900 - i * 350,
+    streak: i === 0 ? 3 : 1, rank: i + 1 }));
   return {
     id: activeId, code: currentCode, title: currentDraft.title, mode: currentDraft.mode,
     phase, version, questionIndex, totalQuestions: currentDraft.questions.length, serverNow: Date.now(),
-    players, answerCount: myOption === undefined && myResponse === undefined ? 0 : 1,
+    players, answerCount: !attendee && example?.startsWith('showcase-') && phase === 'question' ? 3 : myOption === undefined && myResponse === undefined ? 0 : 1,
     ...(phase === 'question' || phase === 'reveal' ? { question: { text: q.text, options: q.options, duration: q.duration, survey: q.survey }, questionStartedAt } : {}),
     ...(attendee && myOption !== undefined ? { myOption } : {}),
     ...(attendee && myResponse !== undefined ? { myResponse: structuredClone(myResponse) } : {}),
     ...(currentDraft.mode === 'quiz' && (phase === 'reveal' || (phase === 'question' && attendee && myOption !== undefined && currentDraft.showAnswer === 'after_response')) ? {
       correctIndex: q.correctIndex, ...(attendee ? { myResult: { correct: myOption === q.correctIndex, points: 1450, score: 2900 } } : {}),
     } : {}),
-    ...(phase === 'reveal' ? { distribution: q.options.map((_, i) => currentDraft.mode === 'survey' ? Number(myResponse?.options.includes(i) ?? myOption === i) : i === 0 ? 3 : 1),
+    ...(phase === 'reveal' && (!attendee || currentDraft.mode === 'quiz') ? { distribution: q.options.map((_, i) => currentDraft.mode === 'survey' ? Number(myResponse?.options.includes(i) ?? myOption === i) : i === 0 ? 3 : 1),
       ...(q.survey?.other ? { otherCount: myResponse?.other === undefined ? 0 : 1 } : {}) } : {}),
-    ...(phase === 'leaderboard' || phase === 'finished' ? currentDraft.mode === 'quiz' ? { rankings } : {
+    ...(phase === 'leaderboard' || phase === 'finished' ? currentDraft.mode === 'quiz' ? { rankings } : !attendee ? {
       surveyResults: currentDraft.questions.slice(0,questionIndex+1).map((question,index)=>{
-        const response=surveyAnswers[index], writtenCount=Number(response?.other!==undefined);
-        const counts=question.options.map((label,i)=>({label,count:Number(response?.options.includes(i)??false)}));
-        if(question.survey?.other&&question.options.length)counts.push({label:'Other (written responses)',count:writtenCount});
+        const responses=resultResponses(index), written=responses.flatMap(r=>r.other===undefined?[]:[r.other]), writtenCount=written.length;
+        const counts=question.options.map((label,i)=>({label,count:responses.filter(r=>r.options.includes(i)).length,option:i}));
+        if(question.survey?.other&&question.options.length)counts.push({label:'Other',count:writtenCount,option:null});
         const maximum=Math.max(0,...counts.map(c=>c.count));
-        return {questionIndex:index,text:question.text,responseCount:Number(!!response),writtenCount,textOnly:!question.options.length,mostSelected:maximum?counts.filter(c=>c.count===maximum):[]};
+        return {questionIndex:index,text:question.text,responseCount:responses.length,writtenCount,textOnly:!question.options.length,
+          mostSelected:maximum?counts.filter(c=>c.count===maximum):[],selections:counts,allowMultiple:!!question.survey?.allowMultiple,writtenResponses:written.slice(0,20)};
       }),
-    } : {}),
+    } : {} : {}),
   };
 }
 window.__quizcrowdFixture = {
@@ -163,7 +214,7 @@ export async function call(_connection, request, token = '', asGuest = false) {
     const target = [...records].find(([id, record]) => request.id === id || request.id === record.currentCode);
     if (target) { records.set(activeId, snapshot()); activate(...target); }
   }
-  if (['edit', 'host', 'duplicate', 'delete'].includes(request.command) && (request.id !== activeId || deleted || !owner || !authenticated)) throw new Error('Session not found or ownership required.');
+  if (['edit', 'host', 'duplicate', 'delete', 'written'].includes(request.command) && (request.id !== activeId || deleted || !owner || !authenticated)) throw new Error('Session not found or ownership required.');
   try {
   switch (request.command) {
     case 'settings': return { ...settings, isAdmin: authenticated && admin };
@@ -196,9 +247,15 @@ export async function call(_connection, request, token = '', asGuest = false) {
     case 'host':
       if (!authenticated) throw new Error('Host ownership required.');
       return view(false);
+    case 'written': {
+      if (currentDraft.mode !== 'survey' || !['leaderboard','finished'].includes(phase) || request.questionIndex > questionIndex) throw new Error('Completed survey question required.');
+      const values=resultResponses(request.questionIndex).flatMap(r=>r.other===undefined?[]:[r.other]);
+      return {questionIndex:request.questionIndex,offset:request.offset,total:values.length,values:values.slice(request.offset,request.offset+20)};
+    }
     case 'state':
       if (!token) throw new Error('Attendee credential required.');
-      return view(true);
+      window.__quizcrowdFixture.lastState = view(true);
+      return window.__quizcrowdFixture.lastState;
     case 'join':
       if (request.id !== currentCode) throw new Error('Session not found.');
       if (!authenticated && !asGuest) throw new Error('Sign in to join.');

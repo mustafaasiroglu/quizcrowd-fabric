@@ -208,11 +208,27 @@ change is required. A future authorized release must update Functions and then
 static assets together; the new frontend payload is not compatible with an old
 Function implementation.
 
-Attendee state projects only that caller's `myResponse`. Hosts and other
-attendees receive normal-option counts and an Other count after collection,
-never individual written responses. With multiple selection, the sum of choice
-counts can exceed the number of submitted responses; Other counts as one
-selection. Surveys still have no correctness key, points or scored podium.
+Survey attendee state projects only that caller's `myResponse` and own answer
+acknowledgement, never distributions, Other counts, question summaries or other
+participants' text, including after completion. Host ownership is verified before
+returning post-collection counts or result summaries. Only completed questions
+appear in host results; no future question or correctness key is projected.
+
+Host results include every normal-choice count and a distinct actual Other
+bucket. The UI ranks at most three positive counts, breaks ties by original
+option order (Other last), and keeps remaining positive/zero choices accessible.
+Percentages divide by submitted responses, not selections; multiple-selection
+percentages can total more than 100%.
+
+Only the verified Entra owner receives written Other/free-text responses in
+results. The initial result contains at most 20 texts per completed question.
+The `written` command rechecks ownership, Survey mode, results/final phase,
+completed question index and bounded offset under the existing Settings/game
+transaction locks, and returns the next 20 texts plus total/offset. No responder
+ID, nickname, credential, correctness or scoring field is returned. Each text
+retains the existing 500-code-unit submission bound. No raw text appears in
+preview, question, reveal, anonymous or attendee results projections.
+Surveys still have no correctness key, points or scored podium.
 
 ### Effective answer duration
 

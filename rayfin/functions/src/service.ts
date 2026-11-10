@@ -3,11 +3,11 @@ import { copyTitle, getAnswerDuration, MAX_OPTIONS, MAX_SURVEY_TEXT_LENGTH } fro
 import type { Store } from './sql-store.js';
 import {
   answer, control, createGame, Denied, Conflict, draftSchema, join, own, preview,
-  settingsView, signed, view, visibilityAllowed, authorDraft, guestAllowed, readOnly, summary,
+  settingsView, signed, view, visibilityAllowed, authorDraft, guestAllowed, readOnly, summary, surveyWrittenPage,
 } from './domain.js';
 
 const requestSchema = z.object({
-  command: z.enum(['settings', 'configure', 'list', 'create', 'edit', 'duplicate', 'resolve', 'visibility', 'delete', 'preview', 'join', 'state', 'host', 'answer', 'control']),
+  command: z.enum(['settings', 'configure', 'list', 'create', 'edit', 'duplicate', 'resolve', 'visibility', 'delete', 'preview', 'join', 'state', 'host', 'answer', 'control', 'written']),
   id: z.string().regex(/^(?:[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}|[0-9A-F]{10}|[0-9]{6})$/i).optional(),
   nickname: z.string().optional(),
   enabled: z.boolean().optional(),
@@ -16,6 +16,7 @@ const requestSchema = z.object({
   version: z.number().int().nonnegative().optional(),
   action: z.enum(['start', 'next']).optional(),
   questionIndex: z.number().int().min(0).max(39).optional(),
+  offset: z.number().int().min(0).max(499).optional(),
   option: z.number().int().min(0).max(MAX_OPTIONS - 1).optional(),
   response: z.object({ options: z.array(z.number().int().min(0).max(MAX_OPTIONS - 1)).max(MAX_OPTIONS), other: z.string().max(MAX_SURVEY_TEXT_LENGTH).optional() }).strict().optional(),
   draft: draftSchema.optional(),
@@ -97,6 +98,9 @@ export async function execute(
       case 'join': result = join(game, input.nickname, subject, settings, now); break;
       case 'state': result = view(game, token, subject, settings, now); break;
       case 'host': result = view(game, '', subject, settings, now, true); break;
+      case 'written':
+        if (input.questionIndex === undefined || input.offset === undefined) throw new Conflict('Specify a question and written-response offset.');
+        return surveyWrittenPage(game, subject, input.questionIndex, input.offset);
       case 'answer':
         if (input.questionIndex === undefined || (input.option === undefined) === (input.response === undefined)) {
           throw new Conflict('Specify a question and exactly one answer payload.');

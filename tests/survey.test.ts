@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { decodeSurveyResponse, encodeSurveyResponse, MAX_SURVEY_ANSWER_LENGTH, MAX_SURVEY_TEXT_LENGTH } from '../packages/shared/src/index';
 import type { Question, SurveyResponse } from '../packages/shared/src/index';
-import { answer, control, createGame, draftSchema, join, preview, surveyResponse, view } from '../rayfin/functions/src/domain';
+import { answer, control, createGame, draftSchema, join, preview, surveyResponse, surveyWrittenPage, view } from '../rayfin/functions/src/domain';
 
 const settings = { anonymousEnabled: true, guestEpoch: 7 };
 const question: Question = { text: 'Your feedback?', options: ['A|B', 'C\\D', 'Third'], correctIndex: null, duration: 60, survey: { other: true, allowMultiple: true } };
@@ -37,23 +37,47 @@ describe('versioned single-field survey encoding', () => {
   });
 });
 describe('survey authoring and submission rules', () => {
-  it('projects completed-question aggregates only after reveal, with ties and no raw text or scoring', () => {
+  it('projects completed-question counts and owner-only written text only in results', () => {
     const { game, alice, bob } = fixture();
     game.questions.push({ ...question, text: 'Future private question' });
     answer(game, alice.token, null, settings, 0, { options: [0], other: 'Private Alice feedback' }, 3000);
     expect(view(game, '', 'owner', settings, 3000, true).surveyResults).toBeUndefined();
     answer(game, bob.token, null, settings, 0, { options: [1] }, 3100);
     expect(view(game, alice.token, null, settings, 3100).surveyResults).toBeUndefined();
-    for (const result of [view(game, '', 'owner', settings, 7100, true), view(game, bob.token, null, settings, 7100)]) {
-      expect(result.surveyResults).toEqual([{ questionIndex: 0, text: question.text, responseCount: 2, writtenCount: 1, textOnly: false,
-        mostSelected: [{ label: 'A|B', count: 1 }, { label: 'C\\D', count: 1 }, { label: 'Other (written responses)', count: 1 }] }]);
+    for (const result of [view(game, '', 'owner', settings, 7100, true)]) {
+      expect(result.surveyResults).toMatchObject([{ questionIndex: 0, text: question.text, responseCount: 2, writtenCount: 1, textOnly: false,
+        mostSelected: [{ label: 'A|B', count: 1 }, { label: 'C\\D', count: 1 }, { label: 'Other', count: 1 }],
+        selections: [{ label: 'A|B', count: 1, option: 0 }, { label: 'C\\D', count: 1, option: 1 },
+          { label: 'Third', count: 0, option: 2 }, { label: 'Other', count: 1, option: null }], allowMultiple: true }]);
       expect(result.rankings).toBeUndefined();
-      expect(JSON.stringify(result)).not.toContain('Private Alice feedback');
       expect(JSON.stringify(result)).not.toContain('Future private question');
       expect(result.correctIndex).toBeUndefined();
     }
+    expect(view(game, '', 'owner', settings, 7100, true).surveyResults?.[0].writtenResponses).toEqual(['Private Alice feedback']);
+    expect(view(game, bob.token, null, settings, 7100).surveyResults).toBeUndefined();
+    expect(JSON.stringify(view(game, bob.token, null, settings, 7100))).not.toContain('Private Alice feedback');
     expect(() => view(game, bob.token, null, { ...settings, anonymousEnabled: false }, 7100)).toThrow();
     expect(() => view(game, '', 'not-owner', settings, 7100, true)).toThrow();
+  });
+  it('omits all survey result aggregates and text from signed-in and guest attendee snapshots in every phase', () => {
+    const game = createGame(draft, 'owner', settings, 1000);
+    const attendees = [{ subject: null, ticket: join(game, 'Guest', null, settings, 1000) },
+      { subject: 'entra-subject', ticket: join(game, 'Member', 'entra-subject', settings, 1000) }];
+    join(game, 'Unanswered', 'other-subject', settings, 1000);
+    control(game, 'start', game.version, 'owner', 2000);
+    answer(game, attendees[0].ticket.token, null, settings, 0, { options: [], other: 'Guest private prose' }, 3000);
+    answer(game, attendees[1].ticket.token, 'entra-subject', settings, 0, { options: [0], other: 'Member private prose' }, 3100);
+    for (const phase of ['question', 'reveal', 'leaderboard', 'finished'] as const) {
+      game.phase = phase;
+      for (const { subject, ticket } of attendees) {
+        const result = view(game, ticket.token, subject, settings, 3200);
+        for (const field of ['distribution', 'otherCount', 'surveyResults', 'rankings', 'correctIndex', 'myResult']) expect(result).not.toHaveProperty(field);
+        expect(result.answerCount).toBe(1);
+        expect(result.myResponse?.other).toBe(subject ? 'Member private prose' : 'Guest private prose');
+        expect(JSON.stringify(result)).not.toContain(subject ? 'Guest private prose' : 'Member private prose');
+        expect(() => surveyWrittenPage(game, subject, 0, 0)).toThrow();
+      }
+    }
   });
   it('handles text-only and unanswered questions without ranking text or zero-count options', () => {
     const { game, alice, bob } = fixture({ ...question, options: [], survey: { other: true, allowMultiple: false } });
@@ -61,10 +85,31 @@ describe('survey authoring and submission rules', () => {
     answer(game, bob.token, null, settings, 0, { options: [], other: 'Secret two' }, 3100);
     const result = view(game, '', 'owner', settings, 7100, true);
     expect(result.surveyResults?.[0]).toMatchObject({ textOnly: true, writtenCount: 2, responseCount: 2, mostSelected: [] });
-    expect(JSON.stringify(result)).not.toContain('Secret');
+    expect(result.surveyResults?.[0].writtenResponses).toEqual(['Secret one', 'Secret two']);
+    expect(view(game, bob.token, null, settings, 7100).surveyResults).toBeUndefined();
     const empty = fixture();
     view(empty.game, '', 'owner', settings, 62000, true);
     expect(view(empty.game, '', 'owner', settings, 66000, true).surveyResults?.[0]).toMatchObject({ responseCount: 0, writtenCount: 0, mostSelected: [] });
+  });
+  it('pages bounded owner-only written text without identities and rejects unfinished or future questions', () => {
+    const { game, alice } = fixture();
+    expect(() => surveyWrittenPage(game, 'owner', 0, 0)).toThrow('completed');
+    answer(game, alice.token, null, settings, 0, { options: [], other: 'Feedback' }, 3000);
+    game.phase = 'finished';
+    const original = game.answers[0];
+    game.answers = Array.from({ length: 47 }, (_, index) => ({ ...original, participantId: `private-${index}`,
+      option: encodeSurveyResponse({ options: [], other: `Written ${index}` }) }));
+    expect(view(game, '', 'owner', settings, 7100, true).surveyResults?.[0].writtenResponses).toHaveLength(20);
+    const pages = [0, 20, 40].map(offset => surveyWrittenPage(game, 'owner', 0, offset));
+    expect(pages.map(page => page.values.length)).toEqual([20, 20, 7]);
+    expect(pages.flatMap(page => page.values)).toEqual(Array.from({ length: 47 }, (_, i) => `Written ${i}`));
+    expect(JSON.stringify(pages)).not.toContain('private-');
+    for (const subject of [null, 'not-owner', 'admin']) expect(() => surveyWrittenPage(game, subject, 0, 0)).toThrow();
+    for (const [index, offset] of [[1, 0], [-1, 0], [0, -1], [0, 500], [0, 0.5]]) {
+      expect(() => surveyWrittenPage(game, 'owner', index, offset)).toThrow();
+    }
+    game.mode = 'quiz';
+    expect(() => surveyWrittenPage(game, 'owner', 0, 0)).toThrow();
   });
   it('permits zero or one normal choices only with Other enabled and rejects quiz extensions', () => {
     for (const options of [[], ['A']]) {
@@ -113,7 +158,9 @@ describe('survey authoring and submission rules', () => {
     expect(game.answers[0].option).toBe(1);
     expect(game.answers[0].format).toBeUndefined();
     answer(game, bob.token, null, settings, 0, 0, 3000);
-    expect(view(game, alice.token, null, settings, 3000)).toMatchObject({ myOption: 1, myResponse: { options: [1] }, distribution: [1, 1, 0] });
+    expect(view(game, alice.token, null, settings, 3000)).toMatchObject({ myOption: 1, myResponse: { options: [1] } });
+    expect(view(game, alice.token, null, settings, 3000).distribution).toBeUndefined();
+    expect(view(game, '', 'owner', settings, 3000, true).distribution).toEqual([1, 1, 0]);
   });
   it('returns only own free text and aggregate counts, before and after reveal', () => {
     const { game, alice, bob } = fixture();

@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Draft, GameView, Phase, Question, QuizSummary, SettingsView, SurveyResponse } from '@rayfin-app/shared';
-import { decodeSurveyResponse, encodeSurveyResponse, getAnswerDuration, MAX_OPTIONS, MAX_TITLE_LENGTH, MAX_SURVEY_ANSWER_LENGTH, MAX_SURVEY_TEXT_LENGTH } from '@rayfin-app/shared';
+import { decodeSurveyResponse, encodeSurveyResponse, getAnswerDuration, MAX_OPTIONS, MAX_TITLE_LENGTH, MAX_SURVEY_ANSWER_LENGTH, MAX_SURVEY_TEXT_LENGTH, SURVEY_TEXT_PAGE_SIZE } from '@rayfin-app/shared';
 
 export class Denied extends Error {}
 export class Conflict extends Error {}
@@ -275,7 +275,7 @@ export function view(
     id: game.id, code: game.code, title: game.title, mode: game.mode,
     phase: game.phase, version: game.version, questionIndex: game.questionIndex,
     totalQuestions: game.questions.length, serverNow: now,
-    players: game.participants.map((p) => p.nickname), answerCount: answers.length,
+    players: game.participants.map((p) => p.nickname), answerCount: game.mode === 'survey' && !host ? Number(!!mine) : answers.length,
   };
   if (q) {
     result.question = publicQuestion(q);
@@ -296,26 +296,41 @@ export function view(
     result.myResult = { correct: mine.correct, points: mine.points, score: p.score };
   }
   if (revealed && q) {
-    if (game.mode === 'survey') {
+    if (game.mode === 'survey' && host) {
       const responses = answers.map(savedSurveyResponse);
       result.distribution = q.options.map((_, i) => responses.filter(r => r.options.includes(i)).length);
       if (q.survey?.other) result.otherCount = responses.filter(r => r.other !== undefined).length;
-    } else result.distribution = q.options.map((_, i) => answers.filter(a => a.option === i).length);
+    } else if (game.mode === 'quiz') result.distribution = q.options.map((_, i) => answers.filter(a => a.option === i).length);
   }
   if (game.phase === 'leaderboard' || game.phase === 'finished') {
-    if (game.mode === 'survey') result.surveyResults = game.questions.slice(0, game.questionIndex + 1).map((question, questionIndex) => {
+    if (game.mode === 'survey' && host) result.surveyResults = game.questions.slice(0, game.questionIndex + 1).map((question, questionIndex) => {
       const responses = game.answers.filter(a => a.questionIndex === questionIndex).map(savedSurveyResponse);
       const writtenCount = responses.filter(r => r.other !== undefined).length;
-      const counts = question.options.map((label, index) => ({ label, count: responses.filter(r => r.options.includes(index)).length }));
-      if (question.survey?.other && question.options.length) counts.push({ label: 'Other (written responses)', count: writtenCount });
+      const counts: { label: string; count: number; option: number | null }[] = question.options.map((label, index) => ({ label, count: responses.filter(r => r.options.includes(index)).length, option: index }));
+      if (question.survey?.other && question.options.length) counts.push({ label: 'Other', count: writtenCount, option: null });
       const maximum = Math.max(0, ...counts.map(c => c.count));
       return { questionIndex, text: question.text, responseCount: responses.length, writtenCount,
-        textOnly: !question.options.length, mostSelected: maximum ? counts.filter(c => c.count === maximum) : [] };
+        textOnly: !question.options.length, mostSelected: maximum ? counts.filter(c => c.count === maximum).map(({ label, count }) => ({ label, count })) : [],
+        selections: counts, allowMultiple: !!question.survey?.allowMultiple,
+        writtenResponses: responses.flatMap(r => r.other === undefined ? [] : [r.other]).slice(0, SURVEY_TEXT_PAGE_SIZE) };
     });
-    else result.rankings = [...game.participants].sort((a, b) => b.score - a.score || a.nickname.localeCompare(b.nickname))
+    else if (game.mode === 'quiz') result.rankings = [...game.participants].sort((a, b) => b.score - a.score || a.nickname.localeCompare(b.nickname))
       .map((p, i) => ({ nickname: p.nickname, score: p.score, streak: p.streak, rank: i + 1 }));
   }
   return result;
+}
+export function surveyWrittenPage(game: Game, subject: string | null, questionIndex: number, offset: number) {
+  own(game, subject);
+  if (game.mode !== 'survey' || !['leaderboard', 'finished'].includes(game.phase) ||
+      !Number.isInteger(questionIndex) || questionIndex < 0 || questionIndex > game.questionIndex ||
+      !game.questions[questionIndex] || !Number.isInteger(offset) || offset < 0 || offset >= 500) {
+    throw new Conflict('Written responses are available only for completed survey questions.');
+  }
+  const values = game.answers.filter(a => a.questionIndex === questionIndex).flatMap(a => {
+    const response = savedSurveyResponse(a);
+    return response.other === undefined ? [] : [response.other];
+  });
+  return { questionIndex, offset, total: values.length, values: values.slice(offset, offset + SURVEY_TEXT_PAGE_SIZE) };
 }
 export function settingsView(settings: Settings, isAdmin: boolean): SettingsView {
   return { ...settings, isAdmin };

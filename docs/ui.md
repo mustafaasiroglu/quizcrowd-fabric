@@ -48,7 +48,7 @@ DOM changes into the platform page.
 | Host lobby | Single responsive card up to 600px wide; session title first, QR above code and URL, attendee count and guarded Start; no separate presentation mode |
 | Attendee | Waiting card, full-width timer (sticky while scrolling on mobile), colored answer choices, submitted-answer state and server-projected reveal; long answer text switches the grid to one column |
 | Host question/results | Centered question card, colored options, timer/answer count, reveal, leaderboard and next/final controls |
-| Finish | Quiz keeps its podium/rankings; Survey shows per-question aggregate summaries and Back to Home, never a score/podium |
+| Finish | Quiz keeps its podium/rankings; Survey host shows per-question charts/written responses, attendee sees only thanks and Back to Home |
 | Recent cards | Compact keyboard-accessible clickable content, no thumbnail or visible Open/View hint, type/title/sentence-case status/date icon/Questions/Responses; separate native three-dot Open / Duplicate / Delete disclosure |
 | Publisher | Trusted administrator-only guest setting at `/admin/`; no header shortcut or bootstrap-identity diagnostic |
 
@@ -79,20 +79,27 @@ and readonly locks still apply. Readonly views omit editing hints.
 Question type/custom duration triggers have a subtle neutral fill and no border.
 Normal and Other option delete controls both use 32px targets with 16px glyphs.
 
-Mobile timer bars have an opaque theme surface, safe-area padding and focus
+Mobile timer bars have a subtle neutral theme surface with 12px corners, no
+heavy border, safe-area padding and focus
 scroll clearance; scrolling choices does not hide remaining time. More than
 100 characters or a newline in any answer switches that answer group to one
 column, without truncating text (mobile already stacks ordinary answers).
 
-Survey reveal says **Results coming up...**. The subsequent results phase and
-finish show the most-selected response buckets for each completed question,
-including ties, unanswered questions and text-only response counts. Other
-responses are an explicitly grouped bucket; their text is never ranked or shown.
-The server emits this projection only in the existing post-reveal results/final
-phases, after the usual owner or attendee capability/audience/expiry/epoch checks.
-Future-question text, raw response text, participant associations and survey
-scores/rankings are not part of this new projection. Current-question reveal
-distributions and all Quiz scoring/reveal rules remain unchanged.
+Survey host reveal says **Results coming up...**. Host results/final show
+per-question **Top 3 selections** bar charts. Percentages use respondents,
+so multiple selections can exceed 100% in total. Ties follow original answer
+order; **Remaining choices** retains every omitted selection/count, including
+zeroes, rather than inventing an additional Other bucket.
+The actual Other bar opens written details on mouse hover, summary keyboard
+activation or touch; Escape closes it and restores summary focus. Text-only
+questions list written submissions without ranking prose. Owner-only text is
+React-escaped, wraps without truncation and loads 20 responses per page with
+explicit total, loading, error and retry states. No respondent identities appear.
+Attendee Survey reveal/results/completion never show other responses or charts;
+the server omits all result aggregates and written text from attendee snapshots,
+not just the DOM. Attendees retain own-answer acknowledgement, waiting status
+and a simple completion thank-you. Future-question text and survey scoring
+remain excluded. All Quiz scoring/reveal rules remain unchanged.
 All settings glyphs use the shared 24-unit outline SVG: a symmetric eight-tooth
 gear and independently centered ring, with the same current-color stroke,
 rounded joins and nonshrinking icon sizing as the other controls. It replaces
@@ -181,7 +188,7 @@ hints: the server rechecks current state when a caller actually joins.
 Completed Survey owner views also offer **View Results**, navigating directly
 to the existing `/host/game/?gameId=<id>` completed-results screen. No new
 results route, attendee join, creation or host control is involved. Reload/back
-use the existing owner-authorized host projection and aggregate-only summaries;
+use the existing owner-authorized host projection and host-only result summaries;
 Quiz result behavior is unchanged. Open Lobby uses the same compact typography,
 padding and hit-target height as Attend; save/create actions keep their normal size.
 
@@ -350,13 +357,13 @@ answer field; literal pipes/backslashes are preserved. See
 [architecture.md](architecture.md#survey-other-and-multiple-selection-responses)
 for the exact format and validation. No SQL table/column/migration is added.
 Legacy numeric single answers and Quiz scoring remain compatible.
-Results show aggregate normal-choice/Other counts only; no other attendee's
-individual written feedback is exposed. Multiple choices count independently,
-not as extra submitted responses.
+Only the host sees result charts and written feedback. Attendee snapshots never
+contain other participants' counts, summaries or text. Multiple choices count
+independently, not as extra submitted responses; host percentages use respondents.
 
 ## Answer duration
 
-New content defaults to **Same for all questions**, 20 seconds. The settings
+New content defaults to **Same for all questions**, 15 seconds. The settings
 panel uses the same compact combined control as per-question timing: a small
 clock, 48px numeric input/spinner and **s**, all inside one bordered wrapper.
 No seconds text or separate unit appears outside the control. Its accessible
@@ -364,7 +371,7 @@ label still specifies seconds. The row can wrap on very narrow
 screens without overflowing; questions have no timer controls in this mode.
 The Answer duration heading has no decorative clock icon.
 **Customize each question** shows a borderless duration trigger at the top of
-every question: clock icon on the left, then a compact label such as **20s**.
+every question: clock icon on the left, then a compact label such as **15s**.
 It matches the type trigger's neutral text, purple hover/focus and hit target.
 Click or Enter/Space opens the existing clock/numeric-spinner/**s** input in an
 anchored nonmodal popover, with input focus, Escape/Tab dismissal and outside
@@ -504,9 +511,27 @@ Survey checks additionally exercise the settings disclosure by keyboard,
 mixed choices/Other, deleting all normal choices, save/reopen/reload/duplicate,
 started read-only controls, radio/checkbox semantics, unselected-text cleanup,
 poll-safe selection state, typed submission, Other-only accessible naming and
-aggregate-only results in both themes at desktop/mobile sizes. Unit/service
+host-only charts/written results and attendee-only acknowledgements in both
+themes at desktop/mobile sizes. Unit/service
 checks cover actual encoded JSON persistence, literal pipe/backslash roundtrips,
 malformed requests, legacy answers, idempotency and unchanged Quiz scoring.
+
+### Polished showcase
+
+The README gallery contains real rendered application screens with fictional,
+test-only Quiz/Survey content. It does not claim live Fabric authorization.
+To regenerate only those curated repository images in an isolated local Edge:
+
+```powershell
+$env:QUIZCROWD_UI_FILTER = 'polished showcase'
+$env:QUIZCROWD_UPDATE_SHOWCASE = '1'
+node tests\ui-browser.mjs
+Remove-Item Env:\QUIZCROWD_UI_FILTER, Env:\QUIZCROWD_UPDATE_SHOWCASE
+```
+
+The normal browser suite exercises these scenes but does not overwrite the
+committed images unless explicitly requested. All fixture data remains under
+`tests`; the production app has no synthetic backend or showcase route.
 
 Real browser captures and the report are saved under the ignored directory
 `rayfin\.temp\routing-review\`. They use synthetic test content:

@@ -513,7 +513,7 @@ Use browser developer tools or a small SDK caller to bypass the UI deliberately.
 | SQL races | Concurrent identical answers award once; competing different answers accept one; concurrent host next uses version check; game/config races do not violate revocation |
 | Recovery | Disconnect/reload, retry a response, restart Function, resume signed-in attendee; no lost/double scores |
 | Timing / complete flow | Lobby -> timed question -> reveal -> leaderboard -> next -> finish with server time and missed-answer streak reset |
-| Survey | No answer key or scoring; aggregates appear after collection and contain no other attendee's individual answer |
+| Survey | No answer key/scoring; post-collection charts and paged written text are owner-only. Signed-in/guest attendee question, reveal and completion snapshots omit all other participants' results, including aggregates; paging rejects nonowners and unfinished/future questions |
 | Public gateway | Signed-out Function reaches private SQL with app-owner token; no caller can supply resource tokens or a database connection |
 | Dependency / capacity | Complete advisory review and load test at expected attendee count; verify Function ZIP under 30 MB and hosting ZIP under 100 MB |
 

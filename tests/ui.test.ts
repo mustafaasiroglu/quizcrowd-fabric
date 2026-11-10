@@ -14,6 +14,8 @@ let ui: {
   renderEditor(draft?: Partial<Draft>, anonymousEnabled?: boolean, readOnly?: boolean, editing?: boolean, session?: { joinUnavailableReason?: string; busy?: boolean; dirty?: boolean; results?: boolean }): string;
   renderLibrary(loadState: 'loading' | 'ready' | 'error'): string;
   sameDraftContent(left: Draft, right: Draft): boolean;
+  blankDraft(mode?: Draft['mode']): Draft;
+  blankQuestion(duration?: number): Question;
   removeOption(question: Question, index: number): Question;
   renderIcon(): string;
   renderBrand(): string;
@@ -31,12 +33,12 @@ beforeAll(async () => {
       load: (id) => id === `\0${entry}` ? `
         import { createElement as h } from 'react';
         import { renderToStaticMarkup } from 'react-dom/server.browser';
-        import { AuthorEditor, blankDraft, removeOption, sameDraftContent } from './src/components/AuthorEditor';
+        import { AuthorEditor, blankDraft, blankQuestion, removeOption, sameDraftContent } from './src/components/AuthorEditor';
         import { GameScreen } from './src/components/GameScreen';
         import { Icon } from './src/components/Icon';
         import { Brand } from './src/components/Brand';
         import { SessionLibrary } from './src/components/SessionLibrary';
-        export { removeOption, sameDraftContent };
+        export { removeOption, sameDraftContent, blankDraft, blankQuestion };
         const noop = () => {};
         export function renderIcon() { return renderToStaticMarkup(h(Icon, {name:'settings'})); }
         export function renderBrand() { return renderToStaticMarkup(h(Brand, {onHome:noop})); }
@@ -62,6 +64,15 @@ beforeAll(async () => {
 }, 20000);
 
 describe('original QuizCrowd screen structure with Fabric authorization controls', () => {
+  it('defaults new Quiz/Survey and added questions to 15 seconds without replacing explicit saved timings', () => {
+    for (const mode of ['quiz', 'survey'] as const) {
+      expect(ui.blankDraft(mode).answerDuration).toEqual({ mode: 'same', seconds: 15 });
+      expect(ui.blankDraft(mode).questions[0].duration).toBe(15);
+      expect(ui.renderEditor({ mode })).toMatch(/id="shared-duration"[^>]*value="15"/);
+    }
+    expect(ui.blankQuestion().duration).toBe(15);
+    expect(ui.blankQuestion(35).duration).toBe(35);
+  });
   it('keeps owner lobby controls and adds normal attendee navigation only to read-only sessions', () => {
     for (const mode of ['quiz', 'survey'] as const) {
       const owner = ui.renderEditor({ mode }, false, true, true, {});
@@ -189,7 +200,7 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(ui.renderGame(question)).toContain('<button class="answer answer-0"');
   });
   it('preserves no-key reveal and survey distribution without announcing correctness', () => {
-    const reveal = ui.renderGame({ ...game, mode: 'survey', phase: 'reveal', question: { text: 'Survey', options: ['A', 'B'], duration: 20 }, distribution: [2, 1] });
+    const reveal = ui.renderGame({ ...game, mode: 'survey', phase: 'reveal', question: { text: 'Survey', options: ['A', 'B'], duration: 20 }, distribution: [2, 1] }, true);
     expect(reveal).toContain('Responses are in!');
     expect(reveal).toContain('2 responses');
     expect(reveal).not.toContain('Correct Answer');
@@ -344,18 +355,22 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     clone.title = saved.title;
     expect(ui.sameDraftContent(saved, clone)).toBe(true);
   });
-  it('shows survey aggregate summaries instead of rankings, with explicit ties, private text and empty cases', () => {
+  it('shows survey top-three bars with respondent denominators, remaining choices and owner-only escaped text', () => {
     const surveyResults = [
-      { questionIndex: 0, text: 'Pick topics', responseCount: 2, mostSelected: [{ label: 'A', count: 1 }, { label: 'B', count: 1 }], writtenCount: 0, textOnly: false },
-      { questionIndex: 1, text: 'Written feedback', responseCount: 1, mostSelected: [], writtenCount: 1, textOnly: true },
-      { questionIndex: 2, text: 'Skipped question', responseCount: 0, mostSelected: [], writtenCount: 0, textOnly: false },
+      { questionIndex: 0, text: 'Pick topics', responseCount: 2, mostSelected: [], writtenCount: 1, textOnly: false, allowMultiple: true,
+        selections: [0, 1, 2, 3].map(option => ({ label: `Choice ${option}`, count: 1, option })), writtenResponses: ['<img src=x onerror=alert(1)>'] },
+      { questionIndex: 1, text: 'Written feedback', responseCount: 1, mostSelected: [], writtenCount: 1, textOnly: true, selections: [], allowMultiple: false, writtenResponses: ['<script>unsafe()</script>'] },
+      { questionIndex: 2, text: 'Skipped question', responseCount: 0, mostSelected: [], writtenCount: 0, textOnly: false, selections: [], allowMultiple: false },
     ];
     for (const phase of ['leaderboard', 'finished'] as const) {
-      const html = ui.renderGame({ ...game, mode: 'survey', phase, surveyResults, rankings: [{ nickname: 'Never rank this name', score: 900, streak: 3, rank: 1 }] });
-      for (const expected of ['Most selected answers (tie)', 'Written response text is private.', 'No responses collected.', 'Pick topics', 'Written feedback', 'Skipped question']) expect(html).toContain(expected);
-      for (const forbidden of ['Never rank this name', ' pts', 'class="podium"', '📊 Leaderboard']) expect(html).not.toContain(forbidden);
+      const html = ui.renderGame({ ...game, mode: 'survey', phase, surveyResults, rankings: [{ nickname: 'Never rank this name', score: 900, streak: 3, rank: 1 }] }, true);
+      for (const expected of ['Top 3 selections', '1 / 2 · 50%', 'Remaining choices (1)', 'Equal counts', 'more than 100%', 'Owner only', '&lt;script&gt;unsafe()&lt;/script&gt;', 'No responses collected.']) expect(html).toContain(expected);
+      for (const forbidden of ['Never rank this name', ' pts', 'class="podium"', '📊 Leaderboard', '<script>unsafe()']) expect(html).not.toContain(forbidden);
+      const attendee = ui.renderGame({ ...game, mode: 'survey', phase, surveyResults });
+      for (const forbidden of ['unsafe()', 'Pick topics', 'Written feedback', 'Top 3 selections', 'Remaining choices', 'Owner only']) expect(attendee).not.toContain(forbidden);
     }
-    expect(ui.renderGame({ ...game, mode: 'survey', phase: 'reveal' })).toContain('Results coming up...');
+    expect(ui.renderGame({ ...game, mode: 'survey', phase: 'reveal' }, true)).toContain('Results coming up...');
+    expect(ui.renderGame({ ...game, mode: 'survey', phase: 'reveal', distribution: [5, 3], otherCount: 2 })).not.toContain('Response distribution');
     expect(ui.renderGame({ ...game, mode: 'survey' }, true)).toContain('Scan to join this survey');
   });
   it('adjusts selected answer indices when removing an option without changing survey nulls', () => {
@@ -384,7 +399,7 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(ui.renderEditor({ mode: 'survey', questions: [onlyOther] }, false, true)).toContain('class="author-content" disabled=""');
   });
   it('groups question controls on the right and shows a borderless Survey-only menu trigger', () => {
-    const quiz = ui.renderEditor({ answerDuration: { mode: 'custom', seconds: 20 } });
+    const quiz = ui.renderEditor({ answerDuration: { mode: 'custom', seconds: 20 }, questions: [{ text: 'Timed question', options: ['A', 'B'], correctIndex: 0, duration: 20 }] });
     expect(quiz).toContain('class="question-duration question-popover-trigger"');
     expect(quiz).toContain('aria-label="Question 1 duration in seconds: 20" aria-haspopup="dialog" aria-expanded="false"');
     expect(quiz).toMatch(/class="question-duration question-popover-trigger"[^>]*><svg[^]*?<\/svg><span>20s<\/span>/);
@@ -413,7 +428,7 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(only).not.toContain('Your Other response');
     expect(only).not.toContain('type="radio"');
     expect(ui.renderGame({ ...game, mode: 'survey', phase: 'question', question, myResponse: { options: [], other: 'Private text' } })).toContain('Answer submitted!');
-    expect(ui.renderGame({ ...game, mode: 'survey', phase: 'reveal', question, distribution: [2, 1], otherCount: 3 })).toContain('3 responses');
+    expect(ui.renderGame({ ...game, mode: 'survey', phase: 'reveal', question, distribution: [2, 1], otherCount: 3 }, true)).toContain('3 responses');
   });
 });
 

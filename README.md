@@ -23,7 +23,7 @@ publisher-controlled anonymous attendance, and application data persisted in
 | Host | Lobby, QR invite, six-digit numeric game code, start/next controls, timed questions, reveal and leaderboard |
 | Attendee | Entra sign-in by default; optional anonymous guest for public quizzes only; per-tab secret attendee credential |
 | Game | Server-calculated scores (1,000 + up to 500 speed points), streaks, late-join policy, three answer-reveal policies |
-| Survey | Manually authored multiple-choice questions, timed collection and aggregate response counts; no scoring or AI generation |
+| Survey | Single/multiple selections, Other and free text; host-only top-three charts and written feedback; no scoring or AI generation |
 | Publisher | Explicit administrator bootstrap, audited database guest-access switch, revocation of existing guest sessions |
 | Persistence | Settings, quizzes, questions, options, keys, participants, submissions, scores and game phases in private Fabric SQL |
 
@@ -108,6 +108,23 @@ tests/                  Local regression and authorization tests
 
 ## QuizCrowd authoring, dark and light
 
+### Sample screens
+
+These are real browser captures of the application using **synthetic local
+examples**, not live Fabric test evidence. Names, scores and feedback are
+fictional. Survey results and written feedback appear only to the session owner;
+attendees see their own response acknowledgement and a completion message.
+
+| Desktop host | Mobile attendee |
+| --- | --- |
+| ![Quiz host presenting an Innovation Week question](docs/images/quiz-desktop-host.png) | ![Mobile Quiz attendee answering the same question](docs/images/quiz-mobile-attendee.png) |
+| ![Survey host with top-three bars and written feedback](docs/images/survey-desktop-host-results.png) | ![Mobile Survey attendee choosing options and writing Other feedback](docs/images/survey-mobile-attendee.png) |
+
+![Quiz final standings with fictional sample scores](docs/images/quiz-desktop-results.png)
+
+The showcase uses explicit 60/90-second sample timings; **new drafts default to
+15 seconds**. See [UI testing and capture instructions](docs/ui.md#polished-showcase).
+
 Home offers **New Live Quiz**, **New Live Survey** and **Join with Code** above
 recent session cards. The editor places title/questions on the left and settings
 on the right, stacked on mobile. Started sessions or sessions with any submitted
@@ -129,7 +146,7 @@ question JSON and answer encoding, without a database migration.
 Six-digit codes preserve leading zeros; existing UUID
 invitations and old codes remain compatible through server-side resolution.
 The original QR lobby, colorful answers, leaderboard and podium remain.
-**Dark is the default**; the only alternative is **Light**, saved across
+**Light is the default**; **Dark** is also available, saved across
 navigation and reloads. Entra, SQL-backed persistence, trusted publisher controls
 and the Internal/Public authorization boundary remain.
 See [UI behavior and screenshot review](docs/ui.md) for intentional
@@ -142,8 +159,8 @@ committed npm lockfile. Tests with serialized in-memory *test doubles* are not
 proof of live DAB authorization or SQL locking. The offline deployment bundle
 is approximately 10.3 MB, below the documented 30 MB Function ZIP ceiling.
 
-The UI authors two to four response options per question and preserves existing
-five/six-option questions; the server supports two to six. Limits are 40 questions, 500 attendees per game, 5–120-second questions,
+The UI and server support two to ten normal choices per question. Surveys also
+support Other and text-only questions. Limits are 40 questions, 500 attendees per game, 5–120-second questions,
 and 12-hour attendee credentials. One locked SQL aggregate per game favors
 correctness over high-throughput scale; load-test your capacity before an event.
 Image upload, AI survey generation, automatic retention, moderator tools and

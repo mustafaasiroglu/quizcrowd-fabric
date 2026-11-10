@@ -164,7 +164,8 @@ describe('game transitions and repeat submissions', () => {
     const a = join(g, 'A', null, enabled, 1000);
     start(g); answer(g, a.token, null, enabled, 0, 1, 3000);
     const result = view(g, a.token, null, enabled, 3000);
-    expect(result.distribution).toEqual([0, 1]);
+    expect(result.distribution).toBeUndefined();
+    expect(view(g, '', 'owner', enabled, 3000, true).distribution).toEqual([0, 1]);
     expect(result.correctIndex).toBeUndefined(); expect(result.myResult).toBeUndefined();
     expect(g.participants[0].score).toBe(0);
   });

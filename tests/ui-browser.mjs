@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, writeFile, rm } from 'node:fs/promises';
+import { copyFile, mkdir, writeFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { startPreview } from './ui-preview.mjs';
 
@@ -269,9 +269,19 @@ async function inspectScreen(name) {
   assert.deepEqual(contrast.failures, [], `${name}: computed text contrast failures ${JSON.stringify(contrast.failures)}`);
 }
 async function navigate(query = '') {
-  await evaluate('if (location.origin === "http://127.0.0.1:5174") {sessionStorage.removeItem("quizcrowd-attendee-credential"); sessionStorage.removeItem("quizcrowd-test-fixture");}');
-  await cdp.call('Page.navigate', { url: `http://127.0.0.1:5174/${query}` }, session);
-  await until('!!window.__quizcrowdFixture && !!document.querySelector("main")');
+  const nonce = crypto.randomUUID();
+  const { identifier } = await cdp.call('Page.addScriptToEvaluateOnNewDocument', { source: `
+    if (location.origin === "http://127.0.0.1:5174") {
+      sessionStorage.removeItem("quizcrowd-attendee-credential");
+      sessionStorage.removeItem("quizcrowd-test-fixture");
+      window.__quizcrowdNavigation = ${JSON.stringify(nonce)};
+    }` }, session);
+  try {
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:5174/${query}` }, session);
+    await until(`window.__quizcrowdNavigation===${JSON.stringify(nonce)} && !!window.__quizcrowdFixture && !!document.querySelector("main")`);
+  } finally {
+    await cdp.call('Page.removeScriptToEvaluateOnNewDocument', { identifier }, session);
+  }
   await pause(250);
 }
 async function phase(value) {
@@ -316,6 +326,48 @@ try {
   await cdp.call('CSS.enable', {}, session);
   await cdp.call('Network.enable', {}, session);
   await cdp.call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }, { name: 'prefers-color-scheme', value: 'dark' }] }, session);
+
+  await check('polished showcase: realistic quiz and survey host and mobile attendee', async () => {
+    async function capture(name) {
+      await inspectScreen(name);
+      await screenshot(name);
+      if (process.env.QUIZCROWD_UPDATE_SHOWCASE === '1') {
+        await mkdir(join('docs', 'images'), { recursive: true });
+        await copyFile(join(directory, `${name}.png`), join('docs', 'images', `${name}.png`));
+      }
+    }
+    await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, session);
+    await navigate('host/game/?gameId=11111111-2222-4333-8444-555555555555&example=showcase-quiz');
+    await click('Dark'); await until('!!document.querySelector(".host-stage.stage-question")');
+    assert.equal(await evaluate('document.querySelector(".answer-count").textContent'), '3 / 4 answered');
+    await capture('quiz-desktop-host');
+    await navigate('host/game/?gameId=11111111-2222-4333-8444-555555555555&example=showcase-quiz&stage=finished');
+    await click('Dark'); await until('!!document.querySelector(".podium")');
+    await capture('quiz-desktop-results');
+    await cdp.call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false }, session);
+    await navigate('join/?code=600123&example=showcase-quiz');
+    await click('Light'); await input('#nickname', 'Alex'); await click('Join Game');
+    await until('!!document.querySelector(".attendee-stage.stage-question")');
+    await capture('quiz-mobile-attendee');
+    await navigate('join/?code=600123&example=showcase-survey');
+    await click('Dark'); await input('#nickname', 'Alex'); await click('Join Game');
+    await until('!!document.querySelector(".survey-response")');
+    await pointerClick('document.querySelectorAll(".survey-choice input")[0]');
+    await pointerClick('document.querySelectorAll(".survey-choice input")[4]');
+    await input('.survey-written-response textarea', 'More time to share ideas across teams.');
+    await capture('survey-mobile-attendee');
+    await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false }, session);
+    await navigate('host/game/?gameId=11111111-2222-4333-8444-555555555555&example=showcase-survey&stage=finished');
+    await click('Light'); await until('document.querySelectorAll(".survey-result").length===2');
+    await evaluate('document.querySelector(".written-choice summary").focus()');
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', text: '\r', windowsVirtualKeyCode: 13 }, session);
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, session);
+    await until('document.querySelector(".written-choice").open');
+    await pointerClick('document.querySelector(".finished-screen h1")');
+    assert.equal(await evaluate('document.querySelector(".written-choice").open'), true);
+    assert.deepEqual(await evaluate('[...document.querySelectorAll(".survey-bars")[0].children].map(e=>e.dataset.selection)'), ['0','1','other']);
+    await capture('survey-desktop-host-results');
+  });
 
   await check('join back does not disable home while its list refresh is pending', async () => {
     await navigate('?fixture=admin');
@@ -372,6 +424,12 @@ try {
         assert.equal(await evaluate('document.querySelectorAll(".session-placeholder").length'),3);
         assert.equal(await evaluate('document.querySelector(".empty-library")===null'),true);
         assert.equal(await evaluate('document.querySelector(".recent-sessions").getAttribute("aria-busy")'),'true');
+        assert.equal(await evaluate('document.querySelector(".library-loading > span").className'),'sr-only');
+        assert.equal(await evaluate('document.querySelector(".library-loading").parentElement.className'),'recent-sessions');
+        await cdp.call('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]},session);
+        assert.equal(await evaluate('getComputedStyle(document.querySelector(".session-placeholder span")).animationName'),'skeleton-pulse');
+        await cdp.call('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]},session);
+        assert.equal(await evaluate('getComputedStyle(document.querySelector(".session-placeholder span")).animationName'),'none');
         const recentGap=await evaluate('document.querySelector(".recent-sessions").getBoundingClientRect().top-document.querySelector(".home-actions").getBoundingClientRect().bottom');
         assert.ok(Math.abs(recentGap-(size==='mobile'?40:48))<1,`recent top spacing ${recentGap}`);
         assert.ok(await evaluate('[...document.querySelectorAll(".home-action")].every(e=>{const i=e.querySelector("svg").getBoundingClientRect(),t=e.querySelector("span").getBoundingClientRect();return t.left-i.right>=16})'));
@@ -422,6 +480,59 @@ try {
         await navigate(`host/game/?gameId=${id}&example=survey-results&owner=other`);
         await until('document.querySelector("[role=alert]")?.textContent.includes("ownership required")');
         assert.equal(await evaluate('document.querySelector(".survey-result")===null'),true);
+      });
+      await check(`${theme}-${size}: host-only survey bar charts and accessible written details`, async () => {
+        const id='11111111-2222-4333-8444-555555555555',label=`${theme}-${size}-survey-bars`;
+        if(size==='mobile')await cdp.call('Emulation.setDeviceMetricsOverride',{width:320,height:740,deviceScaleFactor:1,mobile:false},session);
+        await navigate(`host/game/?gameId=${id}&example=survey-results`);await click(theme==='dark'?'Dark':'Light');
+        await until('document.querySelectorAll(".survey-result").length===3');
+        assert.deepEqual(await evaluate('[...document.querySelector(".survey-bars").children].map(e=>e.dataset.selection)'),['0','1','other']);
+        assert.deepEqual(await evaluate('[...document.querySelector(".survey-bars").querySelectorAll(".survey-bar-label strong")].map(e=>e.textContent)'),['3 / 3 · 100%','2 / 3 · 66.7%','2 / 3 · 66.7%']);
+        const colors=await evaluate('[document.querySelector(".survey-bar-track"),document.querySelector(".survey-bar-track > span")].map(e=>getComputedStyle(e).backgroundColor)');
+        const luminance=color=>color.match(/[\d.]+/g).slice(0,3).map(channel=>{const c=Number(channel)/255;return c<=.04045?c/12.92:((c+.055)/1.055)**2.4}).reduce((sum,c,i)=>sum+c*[.2126,.7152,.0722][i],0);
+        const levels=colors.map(luminance);
+        assert.ok((Math.max(...levels)+.05)/(Math.min(...levels)+.05)>=3,'chart fill contrasts with its track');
+        assert.equal(await evaluate('document.querySelector(".remaining-choices summary").textContent'),'Remaining choices (2)');
+        assert.deepEqual(await evaluate('[...document.querySelector(".remaining-choices .survey-bars").children].map(e=>e.dataset.selection)'),['3','2']);
+        assert.equal(await evaluate('document.querySelector(".survey-results script,.survey-results img")===null&&window.__surveyUnsafe===undefined'),true);
+        assert.equal(await evaluate('document.querySelectorAll(".survey-result:nth-child(2) .written-responses li").length'),20);
+        const hover=await evaluate('(() => {const e=document.querySelector(".written-choice summary");e.scrollIntoView({block:"center"});const r=e.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()');
+        await cdp.call('Input.dispatchMouseEvent',{type:'mouseMoved',...hover},session);await until('document.querySelector(".written-choice").open');
+        assert.ok(await evaluate('document.querySelector(".written-choice").textContent.includes("More networking time.")'));
+        await inspectScreen(`${label}-other-hover`);await screenshot(`${label}-other-hover`,undefined,true);
+        await cdp.call('Input.dispatchMouseEvent',{type:'mouseMoved',x:0,y:0},session);await until('!document.querySelector(".written-choice").open');
+        await evaluate('document.querySelector(".written-choice summary").focus()');
+        await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',text:'\r',windowsVirtualKeyCode:13},session);
+        await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13},session);
+        assert.equal(await evaluate('document.querySelector(".written-choice").open'),true);
+        await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27},session);
+        await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27},session);
+        assert.equal(await evaluate('document.querySelector(".written-choice").open'),false);
+        assert.equal(await evaluate('document.activeElement===document.querySelector(".written-choice summary")'),true);
+        if(size==='mobile'){
+          const tap=await evaluate('(() => {const e=document.querySelector(".written-choice summary");e.scrollIntoView({block:"center"});const r=e.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()');
+          await cdp.call('Emulation.setTouchEmulationEnabled',{enabled:true},session);
+          await cdp.call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...tap,radiusX:2,radiusY:2}]},session);
+          await cdp.call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]},session);await until('document.querySelector(".written-choice").open');
+          await cdp.call('Emulation.setTouchEmulationEnabled',{enabled:false},session);
+        }
+        await evaluate('window.__quizcrowdFixture.defer("written")');await click('Load more written responses');
+        await evaluate('window.__quizcrowdFixture.release("Synthetic written-response failure")');
+        await until('document.querySelector("[role=alert]")?.textContent.includes("Synthetic written-response failure")');
+        assert.equal(await evaluate('document.querySelectorAll(".survey-result:nth-child(2) .written-responses li").length'),20);
+        await click('Load more written responses');await until('document.querySelectorAll(".survey-result:nth-child(2) .written-responses li").length===23');
+        assert.equal(await evaluate('document.querySelector("[role=alert]")===null'),true);
+        assert.deepEqual(await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="written")'),{command:'written',id,questionIndex:1,offset:20,hasToken:false,asGuest:false});
+        assert.equal(await evaluate('document.querySelector(".survey-results script,.survey-results img")===null'),true);
+        await inspectScreen(`${label}-all-written`);await screenshot(`${label}-all-written`);
+        await evaluate(`sessionStorage.setItem("quizcrowd-attendee-credential",JSON.stringify({id:${JSON.stringify(id)},token:"test-only-attendee-credential",guest:false,nickname:"Alex"}));location.href="/play/?gameId=${id}";`);
+        await until('!!document.querySelector(".attendee-stage .finished-screen")');
+        assert.equal(await evaluate('document.querySelector(".survey-result,.survey-bars,.distribution,.rankings,.written-responses")===null'),true);
+        assert.ok(await evaluate('document.querySelector(".finished-screen").textContent.includes("Thank you")'));
+        assert.deepEqual(await evaluate('["surveyResults","distribution","otherCount","rankings"].filter(key=>key in window.__quizcrowdFixture.lastState)'),[]);
+        assert.equal(await evaluate('JSON.stringify(window.__quizcrowdFixture.lastState).includes("Useful feedback")'),false);
+        await inspectScreen(`${label}-attendee-complete`);await screenshot(`${label}-attendee-complete`);
+        if(size==='mobile')await cdp.call('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false},session);
       });
       await check(`${theme}-${size}: original tile brand at compact sizes`, async () => {
         await navigate(); await click(theme === 'dark' ? 'Dark' : 'Light');
@@ -527,18 +638,22 @@ try {
           await evaluate('window.scrollTo(0,250)');await pause(100);
           const timer=await evaluate('(() => {const e=document.querySelector(".timer"),r=e.getBoundingClientRect();return {top:r.top,bottom:r.bottom,position:getComputedStyle(e).position,visible:e.contains(document.elementFromPoint(r.left+r.width/2,r.top+10))}})()');
           assert.equal(timer.position,'sticky');assert.ok(timer.top>=0&&timer.top<=1,JSON.stringify(timer));assert.equal(timer.visible,true);
+          assert.equal(await evaluate('getComputedStyle(document.querySelector(".timer")).borderRadius'),'12px');
+          assert.equal(await evaluate('getComputedStyle(document.querySelector(".timer")).borderTopWidth'),'0px');
           await screenshot(`${label}-sticky-timer`,undefined,true);
         }
         await navigate('join/?code=000123&example=survey-single');await input('#nickname','Survey attendee');await click('Join Game');
         await until('!!document.querySelector(".survey-choice")');await pointerClick('document.querySelector(".survey-choice input")');await click('Submit response');
-        await phase('reveal');assert.ok(await evaluate('document.querySelector(".reveal-screen").textContent.includes("Results coming up...")'));
-        await phase('leaderboard');await until('!!document.querySelector(".survey-result")');
-        assert.equal(await evaluate('document.querySelector(".leaderboard h1").textContent'),'Survey Results');
+        await phase('reveal');assert.ok(await evaluate('document.querySelector(".reveal-screen").textContent.includes("Waiting for host...")'));
+        assert.equal(await evaluate('document.querySelector(".distribution")===null'),true);
+        await phase('leaderboard');await until('!!document.querySelector(".leaderboard")');
+        assert.equal(await evaluate('document.querySelector(".leaderboard h1").textContent'),'Response received');
+        assert.equal(await evaluate('document.querySelector(".survey-result")===null'),true);
         assert.equal(await evaluate('document.querySelector(".rankings")===null'),true);
         await inspectScreen(`${label}-survey-results`);await screenshot(`${label}-survey-results`);
         await navigate(`host/game/?gameId=${id}&example=survey-results`);await until('!!document.querySelector(".finished-screen")');
         assert.equal(await evaluate('document.querySelectorAll(".survey-result").length'),3);
-        for(const text of ['Most selected answers (tie)','Written response text is private.','No responses collected.'])assert.ok(await evaluate(`document.body.textContent.includes(${JSON.stringify(text)})`));
+        for(const text of ['Top 3 selections','Written responses · Owner only','No responses collected.'])assert.ok(await evaluate(`document.body.textContent.includes(${JSON.stringify(text)})`));
         assert.equal(await evaluate('document.body.textContent.includes("Private fixture text")||!!document.querySelector(".podium")||!!document.querySelector(".rankings")'),false);
         await inspectScreen(`${label}-survey-summary`);await screenshot(`${label}-survey-summary`);
         await click('Back to Home');await until('!!document.querySelector(".home-screen")');
@@ -587,12 +702,13 @@ try {
       await check(`${theme}-${size}: question controls align right with an accessible Survey type picker`,async()=>{
         for(const mode of ['quiz','survey']) {
           await navigate();await click(theme==='dark'?'Dark':'Light');await click(mode==='quiz'?'New Live Quiz':'New Live Survey');
+          assert.equal(await evaluate('document.querySelector("#shared-duration").value'),'15');
           assert.equal(await evaluate('document.querySelector(".question-heading .duration")===null'),true);
           await pointerClick('document.querySelector(\'input[name="answer-duration"][value="custom"]\')');
           const alignment=await evaluate(`(() => {const h=document.querySelector('.question-heading'),a=h.querySelector('.question-actions'),t=a.querySelector('.question-duration');return {right:Math.abs(h.getBoundingClientRect().right-a.getBoundingClientRect().right),timerRight:Math.abs(h.getBoundingClientRect().right-t.getBoundingClientRect().right),selects:h.querySelectorAll('.question-type').length};})()`);
           assert.ok(alignment.right<=1);
           assert.equal(alignment.selects,mode==='survey'?1:0);
-          assert.equal(await evaluate('document.querySelector(".question-duration").textContent'),'20s');
+          assert.equal(await evaluate('document.querySelector(".question-duration").textContent'),'15s');
           assert.equal(await evaluate('document.querySelector(".question-duration").firstElementChild.tagName.toLowerCase()'),'svg');
           assert.equal(await evaluate('getComputedStyle(document.querySelector(".question-duration")).borderWidth'),'0px');
           await pointerClick('document.querySelector(".question-duration")');
@@ -714,7 +830,7 @@ try {
           assert.equal(await evaluate(`document.activeElement.matches('${mode==='quiz'?'#question-0':'.question-type'}')`),true);
           await submitAuthor();await until('!!document.querySelector(".host-lobby")');
           const created=await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="create").draft');
-          assert.deepEqual(created.answerDuration,{mode:'custom',seconds:20});assert.equal(created.questions[0].duration,45);
+          assert.deepEqual(created.answerDuration,{mode:'custom',seconds:15});assert.equal(created.questions[0].duration,45);
           await pointerClick('document.querySelector(".small-brand")');await until('!!document.querySelector(".session-open")');
           await pointerClick('document.querySelector(".session-open")');await until('!!document.querySelector(".author")');
           await cdp.call('Page.reload',{},session);await until('!!document.querySelector(".question-duration")');
@@ -881,7 +997,7 @@ try {
           if(mode==='quiz')assert.equal(submitted.option,9);
           else assert.deepEqual(submitted.response,{options:[0,9],other:'Text | with \\ literal'});
           await phase('reveal');
-          assert.equal(await evaluate('document.querySelectorAll(".distribution li").length'),mode==='quiz'?10:11);
+          assert.equal(await evaluate('document.querySelectorAll(".distribution li").length'),mode==='quiz'?10:0);
           await inspectScreen(`${label}-results`);await screenshot(`${label}-results`);
         }
         if(size==='mobile')await cdp.call('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false},session);
@@ -1355,7 +1471,7 @@ try {
         await cdp.call('Page.reload', {}, session); await until('!!document.querySelector(".submitted")');
         assert.equal(await evaluate('document.querySelector(".survey-response")===null'), true);
         await phase('reveal'); await inspectScreen(`${label}-survey-multiple-results`); await screenshot(`${label}-survey-multiple-results`);
-        assert.equal(await evaluate('document.querySelector(".distribution").textContent.includes("Other1 responses")'), true);
+        assert.equal(await evaluate('document.querySelector(".distribution")===null'), true);
         assert.equal(await evaluate('document.body.textContent.includes("Literal | and")'), false);
       });
       await check(`${label}: survey Single Select Other is exclusive and deselected Other text is omitted`, async () => {

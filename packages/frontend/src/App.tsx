@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AnswerSubmission, AuthorView, Draft, GameView, QuizSummary, SettingsView } from '@rayfin-app/shared';
+import type { AnswerSubmission, AuthorView, Draft, GameView, QuizSummary, SettingsView, SurveyWrittenPage } from '@rayfin-app/shared';
 import type { OpaqueSession } from '@microsoft/rayfin-auth';
 import { call, connect, type Connection } from './lib/rayfin-client';
 import { AuthorEditor, blankDraft, sameDraftContent } from './components/AuthorEditor';
@@ -314,7 +314,7 @@ export default function App() {
         if (current()) host(saved.id);
       })} />}
       {route.page === 'game' && !route.host && ticket?.id !== route.id && <section className="card sign-in-card"><h1>Join this session</h1><p className="muted">The attendee credential is stored only in the tab where you joined.</p><button className="primary" onClick={() => navigate({ page: 'join', invitation: route.id })}>Join with Code</button></section>}
-      {route.page === 'game' && !signInGate && (route.host || ticket?.id === route.id) && (!game ? <div className="centered-page"><section className="card loading-card">{!error && <div className="loading-spinner" />}<p role="status">{error ? 'Session unavailable.' : 'Loading session...'}</p>{error && <button className="primary" onClick={home}>Back to Home</button>}</section></div> : <GameScreen game={game} host={showingHost} guest={!!ticket?.guest} nickname={nickname} joinUrl={joinUrl} busy={busy} onCopyError={(e) => setError(`Could not copy to clipboard: ${message(e)}`)} onHome={home} onControl={() => void run(async (current) => {
+      {route.page === 'game' && !signInGate && (route.host || ticket?.id === route.id) && (!game ? <div className="centered-page"><section className="card loading-card">{!error && <div className="loading-spinner" />}<p role="status">{error ? 'Session unavailable.' : 'Loading session...'}</p>{error && <button className="primary" onClick={home}>Back to Home</button>}</section></div> : <GameScreen game={game} host={showingHost} guest={!!ticket?.guest} nickname={nickname} joinUrl={joinUrl} busy={busy} onLoadWritten={showingHost ? (questionIndex, offset) => call<SurveyWrittenPage>(connection!, { command: 'written', id: game.id, questionIndex, offset }) : undefined} onCopyError={(e) => setError(`Could not copy to clipboard: ${message(e)}`)} onHome={home} onControl={() => void run(async (current) => {
         await call(connection!, { command: 'control', id: game.id, action: game.phase === 'lobby' ? 'start' : 'next', version: game.version });
         if (!current()) return;
         const next = await call<GameView>(connection!, { command: 'host', id: game.id });

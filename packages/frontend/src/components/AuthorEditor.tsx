@@ -1,16 +1,16 @@
 import { useRef, useState } from 'react';
 import type { Draft, Question, SurveyQuestionType } from '@rayfin-app/shared';
-import { getAnswerDuration, getSurveyQuestionType, MAX_OPTIONS, MAX_TITLE_LENGTH, PUBLIC_WARNING, setAnswerDuration, setSurveyQuestionType } from '@rayfin-app/shared';
+import { DEFAULT_ANSWER_DURATION, getAnswerDuration, getSurveyQuestionType, MAX_OPTIONS, MAX_TITLE_LENGTH, PUBLIC_WARNING, setAnswerDuration, setSurveyQuestionType } from '@rayfin-app/shared';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 import { DurationInput } from './DurationInput';
 import { QuestionTypePicker } from './QuestionTypePicker';
 import { QuestionDurationPicker } from './QuestionDurationPicker';
 
-export const blankQuestion = (duration = 20): Question => ({ text: '', options: ['', '', '', ''], correctIndex: null, duration });
+export const blankQuestion = (duration = DEFAULT_ANSWER_DURATION): Question => ({ text: '', options: ['', '', '', ''], correctIndex: null, duration });
 export const blankDraft = (mode: Draft['mode'] = 'quiz'): Draft => ({
   title: '', mode, visibility: 'internal', publicAcknowledged: false,
-  lateJoin: false, showAnswer: 'wait_all', questions: [blankQuestion()], answerDuration: { mode: 'same', seconds: 20 },
+  lateJoin: false, showAnswer: 'wait_all', questions: [blankQuestion()], answerDuration: { mode: 'same', seconds: DEFAULT_ANSWER_DURATION },
 });
 export function sameDraftContent(left: Draft, right: Draft): boolean {
   const content = (draft: Draft) => {

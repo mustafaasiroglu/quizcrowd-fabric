@@ -26,6 +26,7 @@ export function setSurveyQuestionType(question: Question, type: SurveyQuestionTy
 export interface SurveyResponse { options: number[]; other?: string }
 export type AnswerSubmission = { option: number; response?: never } | { response: SurveyResponse; option?: never };
 export const MAX_OPTIONS = 10;
+export const DEFAULT_ANSWER_DURATION = 15;
 export const MAX_SURVEY_TEXT_LENGTH = 500;
 export const MAX_SURVEY_ANSWER_LENGTH = 2048;
 export function encodeSurveyResponse(response: SurveyResponse): string {
@@ -84,7 +85,7 @@ export interface Draft {
 }
 export function getAnswerDuration(draft: Pick<Draft, 'questions' | 'answerDuration'>): AnswerDuration {
   if (draft.answerDuration) return draft.answerDuration;
-  const seconds = draft.questions[0]?.duration ?? 20;
+  const seconds = draft.questions[0]?.duration ?? DEFAULT_ANSWER_DURATION;
   return { mode: draft.questions.every(q => q.duration === seconds) ? 'same' : 'custom', seconds };
 }
 export function setAnswerDuration(draft: Draft, answerDuration: AnswerDuration): Draft {
@@ -127,6 +128,16 @@ export interface SurveyQuestionResult {
   mostSelected: { label: string; count: number }[];
   writtenCount: number;
   textOnly: boolean;
+  selections: { label: string; count: number; option: number | null }[];
+  allowMultiple: boolean;
+  writtenResponses?: string[];
+}
+export const SURVEY_TEXT_PAGE_SIZE = 20;
+export interface SurveyWrittenPage {
+  questionIndex: number;
+  offset: number;
+  total: number;
+  values: string[];
 }
 export interface QuizSummary {
   id: string;
