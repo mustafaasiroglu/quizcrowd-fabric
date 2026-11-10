@@ -91,8 +91,10 @@ Settings headings and choices use first-word capitalization, including
 **Allow late joins?**, **Don't allow late join**, **Allow join after game start**,
 **Show correct answers?**, **Wait for all users**, **Show after user response**
 and **Never show**. The stored enum values and server reveal rules are unchanged.
-Quiz questions place **Select the circle beside the correct answer.** after
-the options and the **Add option** action in both DOM and visual order.
+Quiz questions place **Select the circle beside the correct answer.** below
+the options, on the left of the small right-aligned **Add option** action.
+They share a row/baseline when space permits and wrap without overflow on
+narrow screens; the helper precedes actions in DOM order.
 Surveys never show this correctness helper.
 
 ## URLs, history and request lifecycle
@@ -149,8 +151,11 @@ both themes, including hover/focus/active/disabled states. The editor's generic
 outline-button hover rule explicitly excludes filled primary/secondary buttons;
 it previously overrode their white foreground with dark text in Light mode.
 Home uses separate `home-action` buttons with white Light surfaces and neutral
-Dark surfaces, neutral borders/descriptions, and color only on icons/titles.
-Equal compact 260px geometry and 1.01 hover scale are retained.
+Dark surfaces, neutral borders/titles/descriptions, and color only on icons.
+A subtle transparent brand tint reaches the lower-right corner (5% Light,
+8% Dark); most of each surface stays neutral. Equal compact 260px geometry
+and 1.01 hover scale are retained. The Survey description is
+**Collect feedback without scoring.**
 Game-screen purple button fills are slightly darker for text contrast.
 Deletion icons are neutral normally and red on hover/focus.
 
@@ -161,7 +166,16 @@ password-admin or browser quiz archive was imported. Image upload remains
 outside the existing Fabric data contract; no decorative, nonworking upload
 button is presented. Surveys still have no correctness key or score.
 
-The shared footer reads only **QuizCrowd for Microsoft Fabric**. Removing the
+The shared footer reads **QuizCrowd for Microsoft Fabric · About**. About opens
+the existing native modal pattern, with labelled heading, inert background,
+focus containment/restoration and close-button/Escape/backdrop dismissal.
+It links the author's [public Microsoft LinkedIn profile](https://tr.linkedin.com/in/mustafaasiroglu),
+the canonical repository and its enabled issue-creation page. The profile URL
+was confirmed from the publicly indexed LinkedIn Microsoft profile; direct
+automated LinkedIn requests return HTTP 999. About accurately says **source code
+is available on GitHub**, not **fully open source**: the project still has no
+application license grant (see [LICENSING.md](../LICENSING.md)). No license
+is selected or added by this UI change. Removing the
 join screen's question-preview action does not change the public-quiz warning
 or the server's authorized question-projection API. Public questions are not
 made private by hiding a button.
@@ -198,18 +212,21 @@ still disabled and the server/global/public-acknowledgement boundaries are uncha
 
 ## Survey question types and Other
 
-The upper-right question header shows a borderless neutral type label with a
-sliders icon; both become purple on hover/focus. Its anchored radio menu offers
+The upper-right question header shows a borderless neutral type trigger with a
+sliders icon on the left and selected label on the right; both become purple on hover/focus. Its anchored radio menu offers
 three choices, keyboard arrows/Home/End/letter navigation, Enter/Space selection,
 Escape/focus restoration and outside-click/Tab dismissal. The selected type
 stays visible. The sidebar's Settings gear remains.
 Duration, type and delete controls share a right-aligned, wrapping action group;
+the shared 16px gap separates the duration and type triggers in either writing direction;
 the question title and reorder controls stay on the left. This also fixes the
 single-question Quiz timer previously losing its right alignment to a
 last-child margin rule. Quiz questions never show a Survey type picker.
-Add option and Add Other share a right-aligned action row; Quiz correctness
-guidance stays below it. Reorder buttons use compact square geometry with
-32px-high mobile hit targets.
+Add option and Add Other share a right-aligned action group with 12px text and
+32px-or-larger hit targets; Quiz correctness guidance sits to its left when
+space allows. Reorder buttons have zero padding/gap and square geometry;
+their arrows align toward each other without overlapping hit targets.
+Mobile hit targets remain 32px high.
 
 Quiz and Survey editors allow up to ten normal choices. Add option stays visible
 but disabled as **10 options maximum** at the limit and becomes available again
@@ -268,7 +285,16 @@ No seconds text or separate unit appears outside the control. Its accessible
 label still specifies seconds. The row can wrap on very narrow
 screens without overflowing; questions have no timer controls in this mode.
 The Answer duration heading has no decorative clock icon.
-**Customize each question** shows a duration at the top of every question and
+**Customize each question** shows a borderless duration trigger at the top of
+every question: clock icon on the left, then a compact label such as **20s**.
+It matches the type trigger's neutral text, purple hover/focus and hit target.
+Click or Enter/Space opens the existing clock/numeric-spinner/**s** input in an
+anchored nonmodal popover, with input focus, Escape/Tab dismissal and outside
+click handling. Type and duration popups do not stay open together. The input
+remains mounted for native form validation; submitting an invalid value while
+closed reopens/focuses it instead of sending a request. Read-only/busy triggers
+are disabled. This does not change the sidebar's shared duration control.
+Custom duration
 removes the shared input. Values must be whole seconds from 5 through 120.
 Its help text is indented to align with the option text, not the radio circle,
 and is associated with that radio using `aria-describedby`. The displayed copy

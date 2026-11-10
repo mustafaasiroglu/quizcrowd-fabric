@@ -9,6 +9,7 @@ import { ThemeSwitch } from './components/ThemeSwitch';
 import { SessionLibrary } from './components/SessionLibrary';
 import { AccountMenu } from './components/AccountMenu';
 import { Brand } from './components/Brand';
+import { AppFooter } from './components/AppFooter';
 import { isGameId, parseRoute, routeUrl, type AppRoute } from './lib/routes';
 
 type Ticket = { id: string; token: string; guest: boolean; nickname?: string };
@@ -250,7 +251,7 @@ export default function App() {
         <h1 className="sr-only">QuizCrowd live quizzes and surveys</h1>
         <div className="home-actions">
           <button className="home-action quiz-action" aria-label="New Live Quiz" aria-describedby="new-quiz-description" disabled={!connection || busy} onClick={() => create('quiz')}><Icon name="quiz" /><span><strong>New Live Quiz</strong><span id="new-quiz-description" className="action-description">Create a quiz and host it live.</span></span></button>
-          <button className="home-action survey-action" aria-label="New Live Survey" aria-describedby="new-survey-description" disabled={!connection || busy} onClick={() => create('survey')}><Icon name="survey" /><span><strong>New Live Survey</strong><span id="new-survey-description" className="action-description">Collect feedback in a live survey.</span></span></button>
+          <button className="home-action survey-action" aria-label="New Live Survey" aria-describedby="new-survey-description" disabled={!connection || busy} onClick={() => create('survey')}><Icon name="survey" /><span><strong>New Live Survey</strong><span id="new-survey-description" className="action-description">Collect feedback without scoring.</span></span></button>
           <button className="home-action join-code-button" aria-label="Join with Code" aria-describedby="join-description" disabled={busy} onClick={() => navigate({ page: 'join', invitation: '' })}><Icon name="join" /><span><strong>Join with Code</strong><span id="join-description" className="action-description">Enter a quiz or survey.</span></span></button>
         </div>
         {signedIn ? <>{refreshing && <p className="muted small" role="status">Refreshing recent items...</p>}{recent}</>
@@ -310,7 +311,7 @@ export default function App() {
         onSurveyAnswer={(response) => void run(current => submitAnswer({ response }, current))} />)}
       {page === 'not-found' && <section className="card"><h1>Page not found</h1><p>The link is invalid or this page does not exist.</p><button className="primary" onClick={home}>Back to Home</button></section>}
     </main>
-    <footer>QuizCrowd for Microsoft Fabric</footer>
+    <AppFooter />
   </>;
 }
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }

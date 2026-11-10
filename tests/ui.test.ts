@@ -101,7 +101,12 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     const css = await readFile(new URL('../packages/frontend/src/global.css', import.meta.url), 'utf8');
     expect(app).not.toContain('View questions');
     expect(app).not.toContain("command: 'preview'");
-    expect(app).toContain('<footer>QuizCrowd for Microsoft Fabric</footer>');
+    expect(app).toContain('<AppFooter />');
+    const footer = await readFile(new URL('../packages/frontend/src/components/AppFooter.tsx', import.meta.url), 'utf8');
+    expect(footer).toContain('QuizCrowd for Microsoft Fabric');
+    expect(footer).toContain('About QuizCrowd');
+    expect(footer).toContain('source code is available on');
+    expect(footer).not.toContain('fully open source');
     expect(css).toContain('--qc-secondary-fg: #ffffff');
     expect(css).not.toContain('--qc-secondary-fg: #281326');
   });
@@ -221,7 +226,7 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(hint).toBeGreaterThan(quiz.indexOf('class="option-editor-grid"'));
     if (!readOnly) {
       expect(quiz).toContain('Add option</button>');
-      expect(hint).toBeGreaterThan(quiz.indexOf('Add option</button>'));
+      expect(hint).toBeLessThan(quiz.indexOf('Add option</button>'));
     }
     const survey = ui.renderEditor({ mode: 'survey', questions: questions.map(q => ({ ...q, correctIndex: null })) }, false, readOnly, editing);
     expect(survey).not.toContain('answer-reveal-settings');
@@ -259,7 +264,7 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(onlyOther).toMatchObject({ options: [], correctIndex: null, survey: { other: true, allowMultiple: false } });
     const editor = ui.renderEditor({ mode: 'survey', questions: [onlyOther] });
     expect(editor).toContain('aria-label="Question 1 response type: Free Text"');
-    expect(editor).toContain('class="question-type" value="text"');
+    expect(editor).toContain('class="question-type question-popover-trigger" value="text"');
     expect(editor).not.toContain('Add Other');
     expect(editor).not.toContain('class="other-option"');
     expect(editor).not.toContain('Add option</button>');
@@ -267,10 +272,14 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
   });
   it('groups question controls on the right and shows a borderless Survey-only menu trigger', () => {
     const quiz = ui.renderEditor({ answerDuration: { mode: 'custom', seconds: 20 } });
-    expect(quiz).toContain('<div class="question-actions"><label class="duration"');
-    expect(quiz).not.toContain('class="question-type"');
+    expect(quiz).toContain('class="question-duration question-popover-trigger"');
+    expect(quiz).toContain('aria-label="Question 1 duration in seconds: 20" aria-haspopup="dialog" aria-expanded="false"');
+    expect(quiz).toMatch(/class="question-duration question-popover-trigger"[^>]*><svg[^]*?<\/svg><span>20s<\/span>/);
+    expect(quiz).toContain('role="dialog" aria-label="Question 1 duration in seconds" hidden=""');
+    expect(quiz).not.toContain('class="question-type ');
     const survey = ui.renderEditor({ mode: 'survey' });
-    expect(survey).toContain('class="question-type" value="single"');
+    expect(survey).toContain('class="question-type question-popover-trigger" value="single"');
+    expect(survey).toMatch(/class="question-type question-popover-trigger"[^>]*><svg[^]*?<\/svg><span>Single Select<\/span>/);
     expect(survey).not.toContain('<select class="question-type"');
     expect(survey).not.toContain('question-settings');
     expect(survey).not.toContain('name="survey-type-0" type="radio"');
