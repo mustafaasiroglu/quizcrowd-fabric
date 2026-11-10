@@ -91,7 +91,7 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(path).toContain('ZM15 12');
     expect(path?.match(/M/g)).toHaveLength(2);
     for (const draft of [{}, { mode: 'survey' as const }]) {
-      expect(ui.renderEditor(draft).split(`d="${path}"`).length - 1).toBe(draft.mode === 'survey' ? 2 : 1);
+      expect(ui.renderEditor(draft).split(`d="${path}"`).length - 1).toBe(1);
     }
   });
   it('keeps the join preview out of the UI, the footer minimal and secondary text white', async () => {
@@ -246,12 +246,22 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     const onlyOther = ui.removeOption(question, 0);
     expect(onlyOther).toMatchObject({ options: [], correctIndex: null, survey: { other: true, allowMultiple: false } });
     const editor = ui.renderEditor({ mode: 'survey', questions: [onlyOther] });
-    expect(editor).toContain('Question 1 settings');
-    expect(editor).toMatch(/<input(?=[^>]*name="survey-type-0")(?=[^>]*value="text")(?=[^>]*checked="")[^>]*>/);
+    expect(editor).toContain('aria-label="Question 1 response type"');
+    expect(editor).toMatch(/<option(?=[^>]*value="text")(?=[^>]*selected="")[^>]*>/);
     expect(editor).not.toContain('Add Other');
     expect(editor).not.toContain('class="other-option"');
     expect(editor).not.toContain('Add option</button>');
     expect(ui.renderEditor({ mode: 'survey', questions: [onlyOther] }, false, true)).toContain('class="author-content" disabled=""');
+  });
+  it('groups question controls on the right and shows a direct Survey-only type select', () => {
+    const quiz = ui.renderEditor({ answerDuration: { mode: 'custom', seconds: 20 } });
+    expect(quiz).toContain('<div class="question-actions"><label class="duration"');
+    expect(quiz).not.toContain('class="question-type"');
+    const survey = ui.renderEditor({ mode: 'survey' });
+    expect(survey).toContain('<select class="question-type"');
+    expect(survey).not.toContain('question-settings');
+    expect(survey).not.toContain('name="survey-type-0" type="radio"');
+    expect(survey).toContain('<h2 id="settings-heading">');
   });
   it('renders accessible survey radios/checkboxes and Other-only input without a visible Other label', () => {
     const question: Question = { text: 'Feedback', options: ['A', 'B'], correctIndex: null, duration: 20, survey: { other: true, allowMultiple: false } };

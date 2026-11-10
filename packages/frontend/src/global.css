@@ -235,24 +235,13 @@ input[type="radio"] { cursor: pointer; }
 .fabric-fields select { margin-top: 6px; font-size: 13px; padding: 10px; }
 .library-shortcut { display: inline-flex; align-items: center; gap: 6px; }
 .question-editor { margin: 0; }
-.question-heading { gap: 8px; margin-bottom: 12px; }
+.question-heading { flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .question-heading h2 { font-size: 16px; color: var(--qc-muted); }
-.question-heading .duration { margin-left: auto; }
 .reorder { display: flex; flex-direction: column; gap: 0; }
 .reorder .icon-button { min-height: 24px; height: 24px; }
 .reorder .icon { width: 12px; height: 12px; }
-.question-heading > :last-child { margin-left: 0; }
-.question-heading > .delete-action { margin-left: auto; }
-.question-heading .duration + .delete-action { margin-left: 0; }
-.question-settings { position: relative; }
-.question-heading > .question-settings { margin-left: auto; }
-.question-settings summary { list-style: none; cursor: pointer; border-radius: 8px; }
-.question-settings summary::-webkit-details-marker { display: none; }
-.question-heading .duration + .question-settings, .question-heading .question-settings + .delete-action { margin-left: 0; }
-.question-settings-menu { position: absolute; right: 0; top: 36px; z-index: 4; width: 220px; min-width: 0; margin: 0; padding: 12px; text-align: left; background: var(--forms-surface); border: 1px solid var(--forms-border); border-radius: 12px; box-shadow: var(--qc-shadow); }
-.question-settings-menu label { margin: 0; align-items: center; }
-.question-settings-menu .check + .check { margin-top: 8px; }
-.question-settings-menu p { margin-top: 8px; }
+.question-heading > .question-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; max-width: 100%; margin-left: auto; }
+.question-actions .question-type { width: 138px; max-width: 100%; min-height: 32px; border-radius: 8px; padding: 4px 8px; font-size: 12px; }
 .duration { display: inline-flex; align-items: center; gap: 4px; background: var(--qc-input); border: 1px solid var(--qc-border-strong); border-radius: 8px; padding: 4px 8px; font-size: 12px; margin: 0; }
 .duration .icon { width: 12px; height: 12px; }
 .duration input[type="number"] { width: 48px; padding: 0; border: 0; border-radius: 0; font-size: 12px; background: transparent; }

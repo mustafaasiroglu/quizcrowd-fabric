@@ -191,8 +191,13 @@ still disabled and the server/global/public-acknowledgement boundaries are uncha
 
 ## Survey question types and Other
 
-The upper-right question-settings disclosure offers three native, mutually
-exclusive radio choices with keyboard navigation:
+The upper-right question header directly shows a compact native select with
+three choices and standard keyboard navigation. There is no question gear/menu
+to open; the selected type stays visible. The sidebar's Settings gear remains.
+Duration, type and delete controls share a right-aligned, wrapping action group;
+the question title and reorder controls stay on the left. This also fixes the
+single-question Quiz timer previously losing its right alignment to a
+last-child margin rule. Quiz questions never show a Survey type select.
 
 | Choice | Existing JSON representation | Authoring |
 | --- | --- | --- |

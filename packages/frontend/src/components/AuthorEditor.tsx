@@ -69,16 +69,18 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
               <button type="button" className="icon-button" disabled={i === 0} aria-label={`Move question ${i + 1} up`} onClick={() => move(i, -1)}><Icon name="up" /></button>
               <button type="button" className="icon-button" disabled={i === draft.questions.length - 1} aria-label={`Move question ${i + 1} down`} onClick={() => move(i, 1)}><Icon name="down" /></button>
             </div>}
-            {timing.mode === 'custom' && <DurationInput label={`Question ${i + 1} duration in seconds`} value={q.duration} onChange={duration => updateQuestion(i, { duration })} />}
-            {draft.mode === 'survey' && <details className="question-settings" onKeyDown={(event) => {
-              if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); }
-            }}><summary className="icon-button" aria-label={`Question ${i + 1} settings`}><Icon name="settings" /></summary>
-              <fieldset className="question-settings-menu"><legend className="sr-only">Question {i + 1} response type</legend>
+            <div className="question-actions">
+              {timing.mode === 'custom' && <DurationInput label={`Question ${i + 1} duration in seconds`} value={q.duration} onChange={duration => updateQuestion(i, { duration })} />}
+              {draft.mode === 'survey' && <select className="question-type" name={`survey-type-${i}`} aria-label={`Question ${i + 1} response type`} value={getSurveyQuestionType(q)} onChange={event => {
+                const type = event.currentTarget.value;
+                if (type !== 'single' && type !== 'multiple' && type !== 'text') throw new Error('Unsupported survey response type.');
+                changeSurveyType(i, type);
+              }}>
                 {([['single', 'Single Select'], ['multiple', 'Multiple Select'], ['text', 'Free Text']] as const).map(([type, label]) =>
-                  <label className="check" key={type}><input type="radio" name={`survey-type-${i}`} value={type} checked={getSurveyQuestionType(q) === type} onChange={() => changeSurveyType(i, type)} />{label}</label>)}
-              </fieldset>
-            </details>}
-            {!readOnly && draft.questions.length > 1 && <button type="button" className="icon-button delete-action" aria-label={`Remove question ${i + 1}`} onClick={() => setRemoving(i)}><Icon name="trash" /></button>}
+                  <option key={type} value={type}>{label}</option>)}
+              </select>}
+              {!readOnly && draft.questions.length > 1 && <button type="button" className="icon-button delete-action" aria-label={`Remove question ${i + 1}`} onClick={() => setRemoving(i)}><Icon name="trash" /></button>}
+            </div>
           </div>
           <label className="sr-only" htmlFor={`question-${i}`}>Question {i + 1} text</label><textarea id={`question-${i}`} placeholder="Enter your question" required maxLength={1000} rows={2} value={q.text} onChange={(e) => updateQuestion(i, { text: e.target.value })} />
           <div className="option-editor-grid">{q.options.map((option, k) => <div className={`option-editor ${draft.mode === 'quiz' && q.correctIndex === k ? 'is-correct' : ''}`} key={k}>
