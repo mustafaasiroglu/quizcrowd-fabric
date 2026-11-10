@@ -79,21 +79,29 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
       <aside className="card settings-panel" aria-labelledby="settings-heading"><h2 id="settings-heading"><Icon name="settings" />Settings</h2>
         {onRevokePublic && <button type="button" className="subtle full-width" disabled={busy} onClick={onRevokePublic}>Revoke public access (make internal)</button>}
         <fieldset disabled={readOnly || busy}><legend className="sr-only">Session settings</legend>
-          <fieldset className="audience-settings"><legend>Who can respond?</legend>
+          <div className="settings-group"><fieldset className="audience-settings"><legend>Who can respond?</legend>
             <label className="check"><input type="radio" name="audience" value="internal" checked={draft.visibility === 'internal'} onChange={() => onChange({ ...draft, visibility: 'internal', publicAcknowledged: false })} /><span>Only people in my organization<span className="small muted audience-description">Requires sign-in with organization account</span></span></label>
-            <label className="check"><input type="radio" name="audience" value="public" checked={draft.visibility === 'public'} disabled={!anonymousEnabled} onChange={() => onChange({ ...draft, visibility: 'public', publicAcknowledged: false })} /><span>Anyone with link<span className="small muted audience-description">Anonymous response, doesn't require sign-in</span></span></label>
+            <label className="check"><input type="radio" name="audience" value="public" checked={draft.visibility === 'public'} disabled={!anonymousEnabled} onChange={() => onChange({ ...draft, visibility: 'public', publicAcknowledged: false })} /><span>{anonymousEnabled ? 'Anyone with link' : 'Anyone with link (Disabled)'}<span className="small muted audience-description">Anonymous response, doesn't require sign-in</span></span></label>
           </fieldset>
-          {!anonymousEnabled && <p className="muted small">Public attendance is disabled by the publisher.</p>}
-          {draft.visibility === 'public' && <div className="warning"><p>{PUBLIC_WARNING}</p><label className="check"><input type="checkbox" checked={draft.publicAcknowledged} onChange={(e) => onChange({ ...draft, publicAcknowledged: e.target.checked })} required />I understand and choose public access.</label></div>}
-          <fieldset className="duration-settings"><legend><Icon name="clock" />Answer duration</legend>
-            <label className="check"><input type="radio" name="answer-duration" value="same" checked={timing.mode === 'same'} onChange={() => setDuration('same')} />Same for all</label>
+          {draft.visibility === 'public' && <div className="warning"><p>{PUBLIC_WARNING}</p><label className="check"><input type="checkbox" checked={draft.publicAcknowledged} onChange={(e) => onChange({ ...draft, publicAcknowledged: e.target.checked })} required />I understand and choose public access.</label></div>}</div>
+          <div className="settings-group"><fieldset className="duration-settings"><legend>Answer duration</legend>
+            <div className="shared-duration-choice"><label className="check"><input type="radio" name="answer-duration" value="same" checked={timing.mode === 'same'} onChange={() => setDuration('same')} />Same for all questions</label>
+              {timing.mode === 'same' && <label className="global-duration" htmlFor="shared-duration"><span className="sr-only">Duration in seconds for all questions</span><input id="shared-duration" type="number" min={5} max={120} required value={timing.seconds} onChange={(e) => setDuration('same', Number(e.target.value))} /><span aria-hidden="true">s</span></label>}
+            </div>
             <label className="check"><input type="radio" name="answer-duration" value="custom" checked={timing.mode === 'custom'} onChange={() => setDuration('custom')} />Customize per question</label>
-            {timing.mode === 'same' ? <label className="global-duration" htmlFor="shared-duration">Duration in seconds<input id="shared-duration" type="number" min={5} max={120} required value={timing.seconds} onChange={(e) => setDuration('same', Number(e.target.value))} /></label>
-              : <p className="small muted">Set the answer time at the top of each question.</p>}
+            {timing.mode === 'custom' && <p className="small muted">Set the answer time at the top of each question.</p>}
+          </fieldset></div>
+          <div className="settings-group"><fieldset className="late-join-settings"><legend>Allow Late Joins?</legend>
+            <label className="check"><input type="radio" name="late-join" value="deny" checked={!draft.lateJoin} onChange={() => onChange({ ...draft, lateJoin: false })} />Don&apos;t Allow Late Join</label>
+            <label className="check"><input type="radio" name="late-join" value="allow" checked={draft.lateJoin} onChange={() => onChange({ ...draft, lateJoin: true })} />Allow Join After Game Start</label>
+          </fieldset></div>
+          <div className="settings-group"><fieldset className="answer-reveal-settings" disabled={draft.mode === 'survey'}><legend>Show Correct Answers?</legend>
+            <label className="check"><input type="radio" name="answer-reveal" value="wait_all" checked={draft.showAnswer === 'wait_all'} onChange={() => onChange({ ...draft, showAnswer: 'wait_all' })} />Wait for All Users</label>
+            <label className="check"><input type="radio" name="answer-reveal" value="after_response" checked={draft.showAnswer === 'after_response'} onChange={() => onChange({ ...draft, showAnswer: 'after_response' })} />Show After User Response</label>
+            <label className="check"><input type="radio" name="answer-reveal" value="never" checked={draft.showAnswer === 'never'} onChange={() => onChange({ ...draft, showAnswer: 'never' })} />Never Show</label>
           </fieldset>
-          <label>Allow Late Joins?<select value={draft.lateJoin ? 'allow' : 'deny'} onChange={(e) => onChange({ ...draft, lateJoin: e.target.value === 'allow' })}><option value="deny">Don&apos;t Allow Late Join</option><option value="allow">Allow Join After Game Start</option></select></label>
-          <label>Show Correct Answers?<select disabled={draft.mode === 'survey'} value={draft.showAnswer} onChange={(e) => onChange({ ...draft, showAnswer: e.target.value as Draft['showAnswer'] })}><option value="wait_all">Wait for All Users</option><option value="after_response">Show After User Response</option><option value="never">Never Show</option></select></label>
           {draft.mode === 'survey' && <p className="muted small">Disabled for surveys: responses have no correct answer or score.</p>}
+          </div>
         </fieldset>
       </aside>
     </form>

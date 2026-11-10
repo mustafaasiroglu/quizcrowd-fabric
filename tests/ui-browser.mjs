@@ -81,10 +81,11 @@ async function pointerClick(expression) {
 async function input(selector, value) {
   await evaluate(`(() => { const element=document.querySelector(${JSON.stringify(selector)}); if (!element) throw new Error('Input missing'); const proto=element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto,'value').set.call(element,${JSON.stringify(value)}); element.dispatchEvent(new Event('input',{bubbles:true})); element.dispatchEvent(new Event('change',{bubbles:true})); })()`);
 }
-async function screenshot(name) {
+async function screenshot(name, selector) {
   await evaluate('window.scrollTo(0,0)');
   const modal = await evaluate('!!document.querySelector("dialog[open]")');
-  const shot = await cdp.call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: !modal }, session);
+  const clip = selector ? await evaluate(`(() => {const e=document.querySelector(${JSON.stringify(selector)});e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return {x:r.left+scrollX-4,y:r.top+scrollY-4,width:r.width+8,height:r.height+8,scale:4};})()`) : undefined;
+  const shot = await cdp.call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: !modal, ...(clip ? { clip } : {}) }, session);
   const relative = join('rayfin', '.temp', 'routing-review', `${name}.png`);
   await writeFile(relative, Buffer.from(shot.data, 'base64'));
   report.screenshots.push(relative);
@@ -97,15 +98,15 @@ async function check(name, run) {
 async function inspectScreen(name) {
   const audience = await evaluate(`(() => {
     const fieldset=document.querySelector(".audience-settings");
-    return fieldset ? [...fieldset.querySelectorAll("label")].map(label=>({
+    return fieldset ? {disabled:fieldset.querySelector('input[value="public"]').disabled,options:[...fieldset.querySelectorAll("label")].map(label=>({
       value:label.querySelector("input").value,
       title:label.querySelector("span").firstChild.textContent,
       description:label.querySelector(".audience-description").textContent,
-    })) : null;
+    }))} : null;
   })()`);
-  if (audience) assert.deepEqual(audience, [
+  if (audience) assert.deepEqual(audience.options, [
     {value:'internal', title:'Only people in my organization', description:'Requires sign-in with organization account'},
-    {value:'public', title:'Anyone with link', description:"Anonymous response, doesn't require sign-in"},
+    {value:'public', title:audience.disabled?'Anyone with link (Disabled)':'Anyone with link', description:"Anonymous response, doesn't require sign-in"},
   ], `${name}: exact audience order and copy`);
   const dialog = await evaluate(`(() => {const e=document.querySelector('dialog[open]');if(!e)return null;const r=e.getBoundingClientRect(),s=getComputedStyle(e);return {center:r.top+r.height/2,expected:innerHeight/2,top:r.top,height:r.height,position:s.position,inset:s.inset,margin:s.margin,scrollY,viewport:visualViewport.height};})()`);
   if (dialog) assert.ok(Math.abs(dialog.center - dialog.expected) <= 1, `${name}: modal must be centered in the actual viewport: ${JSON.stringify(dialog)}`);
@@ -207,6 +208,119 @@ try {
     for (const theme of ['dark', 'light']) {
       await navigate('?fixture=admin');
       if (size === 'desktop' && theme === 'dark') await check('dark is default even with a light system preference', async () => assert.equal(await evaluate('document.documentElement.dataset.theme'), 'dark'));
+      await check(`${theme}-${size}: settings gear geometry, sizing, keyboard and admin presentation`, async () => {
+        await navigate(); await click(theme === 'dark' ? 'Dark' : 'Light'); await click('New Live Survey');
+        const geometry = await evaluate(`(() => {
+          return [...document.querySelectorAll('.settings-panel h2 svg,.question-settings summary svg')].map(svg=>{
+            const path=svg.querySelector('path'), b=path.getBBox(); let mismatches=0;
+            for(let x=.125;x<24;x+=.5)for(let y=.125;y<24;y+=.5) {
+              if(path.isPointInStroke(new DOMPoint(x,y))!==path.isPointInStroke(new DOMPoint(24-y,x)))mismatches++;
+            }
+            const sizes=[16,20,24,32].map(size=>{
+              svg.style.width=size+'px';svg.style.height=size+'px';
+              const rect=svg.getBoundingClientRect(),s=getComputedStyle(svg);
+              return {size,width:rect.width,height:rect.height,flexShrink:s.flexShrink,stroke:s.stroke,fill:s.fill};
+            });
+            svg.style.removeProperty('width');svg.style.removeProperty('height');
+            return {path:path.getAttribute('d'),viewBox:svg.getAttribute('viewBox'),hidden:svg.getAttribute('aria-hidden'),strokeWidth:svg.getAttribute('stroke-width'),bounds:[b.x,b.y,b.width,b.height],mismatches,sizes};
+          });
+        })()`);
+        assert.equal(geometry.length, 2);
+        assert.equal(geometry[0].path, geometry[1].path);
+        for (const icon of geometry) {
+          assert.deepEqual(icon.bounds, [2, 2, 20, 20]);
+          assert.equal(icon.mismatches, 0, 'gear outline must be quarter-turn symmetric');
+          assert.equal(icon.viewBox, '0 0 24 24'); assert.equal(icon.hidden, 'true'); assert.equal(icon.strokeWidth, '2');
+          for (const measurement of icon.sizes) {
+            assert.equal(measurement.width, measurement.size); assert.equal(measurement.height, measurement.size);
+            assert.equal(measurement.flexShrink, '0'); assert.equal(measurement.fill, 'none'); assert.notEqual(measurement.stroke, 'none');
+          }
+        }
+        const control = await evaluate(`(() => {const s=document.querySelector('.question-settings summary'),r=s.getBoundingClientRect(),i=s.querySelector('svg').getBoundingClientRect();s.focus();return {width:r.width,height:r.height,name:s.getAttribute('aria-label'),inside:i.left>=r.left&&i.top>=r.top&&i.right<=r.right&&i.bottom<=r.bottom,x:r.left+r.width/2,y:r.top+r.height/2};})()`);
+        assert.ok(control.width >= 32 && control.height >= 32 && control.inside);
+        assert.equal(control.name, 'Question 1 settings');
+        await cdp.call('Input.dispatchMouseEvent', {type:'mouseMoved',x:control.x,y:control.y}, session);
+        await cdp.call('Input.dispatchKeyEvent', {type:'keyDown',key:' ',code:'Space',windowsVirtualKeyCode:32}, session);
+        await cdp.call('Input.dispatchKeyEvent', {type:'keyUp',key:' ',code:'Space',windowsVirtualKeyCode:32}, session);
+        await until('document.querySelector(".question-settings").open');
+        for (const motion of ['no-preference', 'reduce']) {
+          await cdp.call('Emulation.setEmulatedMedia', {features:[{name:'prefers-reduced-motion',value:motion}]}, session);
+          await inspectScreen(`${theme}-${size}-settings-gear-${motion}`);
+          assert.equal(await evaluate('getComputedStyle(document.querySelector(".question-settings svg")).animationName'), 'none');
+        }
+        await screenshot(`${theme}-${size}-settings-gear-editor`);
+        await screenshot(`${theme}-${size}-settings-gear-detail`, '.question-settings summary svg');
+        await screenshot(`${theme}-${size}-settings-heading-detail`, '.settings-panel h2 svg');
+        await cdp.call('Input.dispatchKeyEvent', {type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27}, session);
+        await cdp.call('Input.dispatchKeyEvent', {type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27}, session);
+        assert.equal(await evaluate('document.querySelector(".question-settings").open'), false);
+        assert.equal(await evaluate('document.activeElement.tagName'), 'SUMMARY');
+        await navigate('admin/?fixture=admin'); await until('!!document.querySelector(".publisher-page")');
+        await inspectScreen(`${theme}-${size}-settings-gear-admin`);
+        await screenshot(`${theme}-${size}-settings-gear-admin`);
+        assert.equal(await evaluate('document.querySelectorAll(".publisher-page input[type=checkbox]").length'), 1);
+      });
+      await check(`${theme}-${size}: settings layout, inline duration and visible choices`, async () => {
+        await navigate(); await click(theme === 'dark' ? 'Dark' : 'Light'); await click('New Live Quiz');
+        const layout = await evaluate(`(() => {
+          const content=document.querySelector('.author-content'),panel=document.querySelector('.settings-panel'),a=content.getBoundingClientRect(),b=panel.getBoundingClientRect();
+          const label=document.querySelector('.shared-duration-choice > label').getBoundingClientRect(),input=document.querySelector('#shared-duration').getBoundingClientRect();
+          return {domFirst:!!(content.compareDocumentPosition(panel)&Node.DOCUMENT_POSITION_FOLLOWING),contentBottom:a.bottom,contentTop:a.top,settingsTop:b.top,inline:Math.abs(label.top+label.height/2-input.top-input.height/2),inputWidth:input.width,
+            groups:[...panel.querySelectorAll('.settings-group')].map(e=>{const s=getComputedStyle(e);return {border:s.borderTopWidth,color:s.borderTopColor,padding:parseFloat(s.paddingTop)}})};
+        })()`);
+        assert.equal(layout.domFirst, true);
+        if (size === 'mobile') assert.ok(layout.settingsTop >= layout.contentBottom, 'questions must appear before settings in narrow layouts');
+        else assert.ok(Math.abs(layout.settingsTop - layout.contentTop) <= 1, 'desktop keeps two top-aligned columns');
+        assert.ok(layout.inline <= 1); assert.equal(layout.inputWidth, 60);
+        assert.equal(layout.groups.length, 4);
+        for (const group of layout.groups.slice(1)) {
+          assert.equal(group.border, '1px'); assert.match(group.color, /rgba\(/); assert.ok(group.padding <= 16);
+        }
+        assert.equal(await evaluate('document.querySelector(".duration-settings legend").textContent'), 'Answer duration');
+        assert.equal(await evaluate('document.querySelector(".duration-settings legend svg")===null'), true);
+        assert.equal(await evaluate('document.querySelector(".shared-duration-choice > label").textContent'), 'Same for all questions');
+        assert.equal(await evaluate('document.querySelectorAll(".settings-panel select").length'), 0);
+        assert.equal(await evaluate('document.body.textContent.includes("Public attendance is disabled by the publisher.")'), false);
+        assert.equal(await evaluate('document.querySelector(\'input[value="public"]\').labels[0].querySelector("span").firstChild.textContent'), 'Anyone with link (Disabled)');
+        await evaluate('document.querySelector(".author-content button[type=submit]").focus()');
+        await cdp.call('Input.dispatchKeyEvent', {type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9}, session);
+        await cdp.call('Input.dispatchKeyEvent', {type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9}, session);
+        assert.equal(await evaluate('document.querySelector(".settings-panel").contains(document.activeElement)'), true);
+        await input('#shared-duration', '35');
+        await evaluate('document.querySelector(\'input[name="late-join"][value="deny"]\').focus()');
+        for (const [key, code] of [['ArrowDown', 40], ['ArrowDown', 40], ['ArrowUp', 38]]) {
+          await cdp.call('Input.dispatchKeyEvent', {type:'keyDown',key,code:key,windowsVirtualKeyCode:code}, session);
+          await cdp.call('Input.dispatchKeyEvent', {type:'keyUp',key,code:key,windowsVirtualKeyCode:code}, session);
+        }
+        assert.equal(await evaluate('document.querySelector(\'input[name="late-join"]:checked\').value'), 'allow');
+        await evaluate('document.querySelector(\'input[name="answer-reveal"][value="wait_all"]\').focus()');
+        for (const [key, code] of [['ArrowDown', 40], ['ArrowDown', 40], ['ArrowUp', 38]]) {
+          await cdp.call('Input.dispatchKeyEvent', {type:'keyDown',key,code:key,windowsVirtualKeyCode:code}, session);
+          await cdp.call('Input.dispatchKeyEvent', {type:'keyUp',key,code:key,windowsVirtualKeyCode:code}, session);
+        }
+        assert.equal(await evaluate('document.querySelector(\'input[name="answer-reveal"]:checked\').value'), 'after_response');
+        await inspectScreen(`${theme}-${size}-settings-layout`); await screenshot(`${theme}-${size}-settings-layout`);
+        if (size === 'mobile' && theme === 'light') {
+          await cdp.call('Emulation.setDeviceMetricsOverride', {width:320,height:740,deviceScaleFactor:1,mobile:false}, session);
+          await inspectScreen('light-320-settings-layout'); await screenshot('light-320-settings-layout');
+          await cdp.call('Emulation.setDeviceMetricsOverride', {width,height,deviceScaleFactor:1,mobile:false}, session);
+        }
+        await input('#quiz-title', 'Settings review'); await input('#question-0', 'Which choice?');
+        for (const [i, option] of ['First', 'Second', 'Third', 'Fourth'].entries()) await input(`#option-0-${i}`, option);
+        await pointerClick('document.querySelector(\'[aria-label="Question 1, correct option 1"]\')');
+        await click('Save & Open Lobby'); await until('!!document.querySelector(".host-lobby")');
+        const saved = await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="create").draft');
+        assert.deepEqual(saved.answerDuration, {mode:'same',seconds:35});
+        assert.equal(saved.lateJoin, true); assert.equal(saved.showAnswer, 'after_response');
+        await click('Start Game'); await until('!!document.querySelector(".host-stage.stage-question")');
+        await pointerClick('document.querySelector(".small-brand")'); await until('!!document.querySelector(".session-open")');
+        await pointerClick('document.querySelector(".session-open")'); await until('!!document.querySelector(".readonly-notice")');
+        assert.equal(await evaluate('document.querySelector("#shared-duration").value'), '35');
+        assert.equal(await evaluate('[...document.querySelectorAll(".settings-panel input")].every(e=>e.matches(":disabled"))'), true);
+        assert.equal(await evaluate('document.querySelector(\'input[name="late-join"]:checked\').value'), 'allow');
+        assert.equal(await evaluate('document.querySelector(\'input[name="answer-reveal"]:checked\').value'), 'after_response');
+      });
+      await navigate('?fixture=admin');
       await click(theme === 'dark' ? 'Dark' : 'Light');
       const label = `${theme}-${size}`;
       await check(`${label}: home layout, theme and accessibility`, async () => {
@@ -338,7 +452,7 @@ try {
         assert.equal(await evaluate('document.querySelector("form").checkValidity()'), false);
         await pointerClick('document.querySelector(\'[aria-label="Question 1, correct option 1"]\')');
         assert.equal(await evaluate('document.querySelector(".settings-panel").textContent.includes("Content Type")'), false);
-        assert.equal(await evaluate('document.querySelector(".settings-panel > fieldset > fieldset:first-of-type").classList.contains("audience-settings")'), true);
+        assert.equal(await evaluate('document.querySelector(".settings-panel > fieldset > .settings-group > fieldset").classList.contains("audience-settings")'), true);
         assert.equal(await evaluate('document.querySelector(".audience-settings legend").textContent'), 'Who can respond?');
         assert.equal(await evaluate('document.querySelectorAll(".question-heading .duration").length'), 0);
         await input('#shared-duration', '35');
@@ -456,7 +570,8 @@ try {
   await check('survey authoring preserves null keys and no-scoring completion', async () => {
     await navigate(); await click('New Live Survey');
     assert.equal(await evaluate('document.querySelectorAll(\'[aria-label*="correct option"]\').length'), 0);
-    assert.equal(await evaluate('[...document.querySelectorAll(".settings-panel select")].at(-1).disabled'), true);
+    assert.equal(await evaluate('document.querySelector(".answer-reveal-settings").disabled'), true);
+    assert.equal(await evaluate('[...document.querySelectorAll(".answer-reveal-settings input")].every(e=>e.matches(":disabled"))'), true);
     await input('#quiz-title', 'Team Survey'); await input('#question-0', 'How was the session?');
     for (const [i, option] of ['Great', 'Good', 'Okay', 'Needs work'].entries()) await input(`#option-0-${i}`, option);
     await click('Save & Open Lobby'); await until('!!document.querySelector(".host-lobby")');

@@ -13,6 +13,7 @@ let ui: {
   renderGame(game: GameView, host?: boolean): string;
   renderEditor(draft?: Partial<Draft>, anonymousEnabled?: boolean, readOnly?: boolean): string;
   removeOption(question: Question, index: number): Question;
+  renderIcon(): string;
 };
 beforeAll(async () => {
   const entry = 'virtual:quizcrowd-ui-regression';
@@ -29,8 +30,10 @@ beforeAll(async () => {
         import { renderToStaticMarkup } from 'react-dom/server.browser';
         import { AuthorEditor, blankDraft, removeOption } from './src/components/AuthorEditor';
         import { GameScreen } from './src/components/GameScreen';
+        import { Icon } from './src/components/Icon';
         export { removeOption };
         const noop = () => {};
+        export function renderIcon() { return renderToStaticMarkup(h(Icon, {name:'settings'})); }
         export function renderEditor(patch = {}, anonymousEnabled = false, readOnly = false) {
           return renderToStaticMarkup(h(AuthorEditor, {draft:{...blankDraft(),...patch},onChange:noop,editing:false,anonymousEnabled,readOnly,busy:false,onSave:noop,onBack:noop}));
         }
@@ -52,6 +55,21 @@ beforeAll(async () => {
 }, 20000);
 
 describe('original QuizCrowd screen structure with Fabric authorization controls', () => {
+  it('shares one closed gear outline and independently centered ring without changing icon presentation', () => {
+    const icon = ui.renderIcon();
+    expect(icon).toContain('class="icon"');
+    expect(icon).toContain('aria-hidden="true"');
+    expect(icon).toContain('fill="none"');
+    expect(icon).toContain('viewBox="0 0 24 24"');
+    expect(icon).toContain('stroke="currentColor"');
+    expect(icon).toContain('stroke-width="2"');
+    const path = icon.match(/ d="([^"]+)"/)?.[1];
+    expect(path).toContain('ZM15 12');
+    expect(path?.match(/M/g)).toHaveLength(2);
+    for (const draft of [{}, { mode: 'survey' as const }]) {
+      expect(ui.renderEditor(draft).split(`d="${path}"`).length - 1).toBe(draft.mode === 'survey' ? 2 : 1);
+    }
+  });
   it('keeps the join preview out of the UI, the footer minimal and secondary text white', async () => {
     const app = await readFile(new URL('../packages/frontend/src/App.tsx', import.meta.url), 'utf8');
     const css = await readFile(new URL('../packages/frontend/src/global.css', import.meta.url), 'utf8');
@@ -112,6 +130,9 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
   ] as const)('uses the exact ordered audience copy in %s, readonly=%s', (mode, readOnly) => {
     const editor = ui.renderEditor({ mode }, false, readOnly);
     expect(editor.indexOf('Only people in my organization')).toBeLessThan(editor.indexOf('Anyone with link'));
+    expect(editor).toContain('Anyone with link (Disabled)');
+    expect(editor).not.toContain('Public attendance is disabled by the publisher.');
+    expect(ui.renderEditor({ mode }, true, readOnly)).not.toContain('Anyone with link (Disabled)');
     expect(editor).toContain('Requires sign-in with organization account');
     expect(editor).toContain('Anonymous response, doesn&#x27;t require sign-in');
     expect(editor).toMatch(/<input(?=[^>]*name="audience")(?=[^>]*value="internal")(?=[^>]*checked="")[^>]*>/);
@@ -129,9 +150,10 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(editable).not.toContain('Content Type');
     expect(editable.indexOf('Who can respond?')).toBeLessThan(editable.indexOf('Answer duration'));
     expect(editable).not.toContain('value="quiz"');
-    expect(editable).toContain('Same for all');
+    expect(editable).toContain('Same for all questions');
     expect(editable).toContain('id="shared-duration"');
     expect(editable).not.toContain('class="duration"');
+    expect(editable).toContain('<legend>Answer duration</legend>');
     const custom = ui.renderEditor({ answerDuration: { mode: 'custom', seconds: 20 }, questions: [20, 35].map(duration => ({ text: 'Question', options: ['A', 'B'], correctIndex: 0, duration })) });
     expect(custom).toContain('class="duration"');
     expect(custom).not.toContain('id="shared-duration"');
@@ -140,6 +162,20 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(locked).toContain('class="author-content" disabled=""');
     expect(locked).not.toContain('Save &amp; Open Lobby');
     expect(locked).not.toContain('Remove question');
+  });
+  it('uses visible native radio groups for late joins and answer reveal, preserving checked and disabled state', () => {
+    const editable = ui.renderEditor({ lateJoin: true, showAnswer: 'never' });
+    expect(editable).not.toContain('<select');
+    expect(editable).toContain('class="shared-duration-choice"');
+    expect(editable).toContain('Duration in seconds for all questions');
+    expect(editable.match(/class="settings-group"/g)).toHaveLength(4);
+    for (const [name, value] of [['late-join', 'allow'], ['answer-reveal', 'never']]) {
+      expect(editable).toMatch(new RegExp(`<input(?=[^>]*name="${name}")(?=[^>]*value="${value}")(?=[^>]*checked="")[^>]*>`));
+    }
+    expect(ui.renderEditor({ mode: 'survey' })).toContain('class="answer-reveal-settings" disabled=""');
+    const readonly = ui.renderEditor({ lateJoin: true, showAnswer: 'after_response' }, true, true);
+    expect(readonly).toContain('class="author-content" disabled=""');
+    expect(readonly).toMatch(/<input(?=[^>]*name="answer-reveal")(?=[^>]*value="after_response")(?=[^>]*checked="")[^>]*>/);
   });
   it('keeps equal-valued custom mode selected and visible in read-only views', () => {
     const locked = ui.renderEditor({ answerDuration: { mode: 'custom', seconds: 35 },

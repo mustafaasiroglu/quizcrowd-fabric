@@ -44,7 +44,7 @@ DOM changes into the platform page.
 | Home | Compact equal-width (260px desktop) icon/title/description New Live Quiz / New Live Survey / Join with Code actions, not row-stretched; matching borders, 12px padding/radius and subtle 1.01 hover scale; Recent Items with Your recent quiz and surveys.; stacked on mobile |
 | Join | Narrow card, six-digit numeric string code including leading zeros, separate nickname step; old links resolve; no pre-join preview action |
 | Author | Wide title/questions column with white Light surfaces or dark indigo surfaces; compact question cards, correctness controls, options and reordering |
-| Settings | Right sidebar on desktop, stacked on mobile; Who can respond? first, then answer duration, late joins and answer reveal; no Content Type label/control |
+| Settings | Right sidebar on desktop, after the question/content column on narrow layouts in both visual and DOM/tab order; Who can respond? first, then answer duration, late joins and answer reveal; no Content Type label/control |
 | Host lobby | 448px card, prominent session code, copy code/link, white QR panel, joined-player chips and start action |
 | Attendee | Waiting card, full-width timer, colored answer choices, submitted-answer state and server-projected reveal |
 | Host question/results | Centered question card, colored options, timer/answer count, reveal, leaderboard and next/final controls |
@@ -60,11 +60,19 @@ card geometry and mobile option stacking. Home/editor use purple and pink
 accents with Segoe UI typography. Their status badges, authoring correctness
 selection and controls use no green; the game correctness semantics stay unchanged.
 Reduced-motion preferences disable animations and transitions.
+All settings glyphs use the shared 24-unit outline SVG: a symmetric eight-tooth
+gear and independently centered ring, with the same current-color stroke,
+rounded joins and nonshrinking icon sizing as the other controls. It replaces
+the previous asymmetric outer contour without changing menus or hit targets.
 
 All screens share one 1280px maximum-width shell and responsive horizontal
 padding, including editor/settings, admin and gameplay. Inner join, lobby and
 results cards keep their narrower readable widths within that shell. The editor
 collapses its two columns on smaller screens.
+Settings groups use compact shared spacing and translucent horizontal borders
+between groups. Late-join and answer-reveal choices are always-visible native
+radio groups, not dropdowns: their option values and behavior are unchanged.
+Survey correctness choices and started/answered-session settings remain disabled.
 
 ## URLs, history and request lifecycle
 
@@ -148,6 +156,10 @@ The shared Quiz/Survey editor lists **Only people in my organization** first
 with **Requires sign-in with organization account**, then **Anyone with link**
 with **Anonymous response, doesn't require sign-in**. These shorter labels do
 not change the Entra directory-guest semantics or enable anonymous access.
+When the publisher disables public attendance, the option title becomes
+**Anyone with link (Disabled)** and the separate publisher-disabled paragraph
+is omitted. The anonymous-response description remains; the native radio is
+still disabled and the server/global/public-acknowledgement boundaries are unchanged.
 
 ## Survey Other and Allow multiple
 
@@ -181,8 +193,11 @@ not as extra submitted responses.
 
 ## Answer duration
 
-New content defaults to **Same for all**, 20 seconds. Only the settings panel
-shows the duration input in this mode; questions have no timer controls.
+New content defaults to **Same for all questions**, 20 seconds. Only the settings
+panel shows the compact 60px numeric input inline beside this choice, with a
+visible seconds unit and an accessible label. The row can wrap on very narrow
+screens without overflowing; questions have no timer controls in this mode.
+The Answer duration heading has no decorative clock icon.
 **Customize per question** shows a duration at the top of every question and
 removes the shared input. Values must be whole seconds from 5 through 120.
 Changing to custom initializes questions with the current shared value.
@@ -306,6 +321,8 @@ Real browser captures and the report are saved under the ignored directory
 | Survey settings | `rayfin\.temp\routing-review\light-desktop-survey-settings.png` |
 | Multiple choices and Other | `rayfin\.temp\routing-review\dark-desktop-survey-multiple-other.png` |
 | Other-only written response | `rayfin\.temp\routing-review\light-mobile-survey-only-other.png` |
+| Compact settings / question-first mobile order | `rayfin\.temp\routing-review\light-mobile-settings-layout.png` |
+| Shared gear detail (4x screenshot crop) | `rayfin\.temp\routing-review\dark-desktop-settings-gear-detail.png` |
 | Equal custom durations reopened | `rayfin\.temp\routing-review\dark-desktop-equal-custom-reopen.png` |
 | QR lobby | `rayfin\.temp\routing-review\light-mobile-host-lobby.png` |
 | Host question | `rayfin\.temp\routing-review\dark-desktop-host-question.png` |
