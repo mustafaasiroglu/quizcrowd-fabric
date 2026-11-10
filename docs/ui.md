@@ -8,6 +8,37 @@ read-only, not built, executed or modified.
 
 ## Screens
 
+### Protected-hosting sign-in boundary
+
+The standalone site's initial **Sign in required** page is served by Fabric
+before QuizCrowd's HTML, JavaScript or theme CSS can load. On 2026-11-10, an
+unauthenticated request with `Accept: text/html` returned the platform page
+headed **Microsoft Fabric**, with this description:
+**This app is private. Sign in with your Microsoft Fabric account to open it.**
+It did not include the QuizCrowd application bundle. A non-HTML request returned
+`Authentication required.` instead.
+
+The requested **Quiz Crowd** heading, **Creator experience requires login with
+your work account.** description and animated Dark/Light background therefore
+cannot be applied to that page by editing the React frontend. The pinned
+Rayfin 1.36.2 `StaticHostingConfig` and auth declarations expose no supported
+gate-branding, custom login template, text or stylesheet option. The installed
+hosting guide and [official hosting documentation](https://learn.microsoft.com/en-us/fabric/apps/hosting)
+do not document one either. `indexDocument` selects the app's index file; it
+does not replace this pre-authentication platform response.
+
+Keep `assetAccess: protected` unless the publisher explicitly approves a
+different hosting posture. A supported platform branding feature would be
+needed to customize this exact gate while retaining that posture. An alternative
+requiring a separate security decision is public static assets with an
+app-controlled branded Entra sign-in screen: API, SQL, owner/admin and guest
+authorization must remain enforced, but the platform's pre-authentication asset
+permission barrier would no longer apply. This is not equivalent to changing
+the current gate, does not establish anonymous Function support, and has not
+been implemented or enabled. Tenant prerequisites would need separate review.
+Do not patch SDK/vendor files, spoof Microsoft credential collection, or inject
+DOM changes into the platform page.
+
 | Screen | Behavior |
 | --- | --- |
 | Home | Icon-led New Live Quiz / New Live Survey / Join with Code actions, the only recent-session grid; stacked on mobile |
