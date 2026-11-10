@@ -12,6 +12,17 @@ export interface Question {
   survey?: SurveySettings;
 }
 export interface SurveySettings { other: boolean; allowMultiple: boolean }
+export type SurveyQuestionType = 'single' | 'multiple' | 'text';
+export function getSurveyQuestionType(question: Question): SurveyQuestionType {
+  if (!question.options.length && question.survey?.other) return 'text';
+  return question.survey?.allowMultiple ? 'multiple' : 'single';
+}
+export function setSurveyQuestionType(question: Question, type: SurveyQuestionType, previousOptions = question.options): Question {
+  const options = [...previousOptions];
+  while (options.length < 2) options.push('');
+  return { ...question, options: type === 'text' ? [] : options, correctIndex: null,
+    survey: { other: type === 'text' || (type === 'multiple' && !!question.survey?.other), allowMultiple: type === 'multiple' } };
+}
 export interface SurveyResponse { options: number[]; other?: string }
 export type AnswerSubmission = { option: number; response?: never } | { response: SurveyResponse; option?: never };
 export const MAX_SURVEY_TEXT_LENGTH = 500;
@@ -50,6 +61,16 @@ export interface AnswerDuration {
   mode: 'same' | 'custom';
   seconds: number;
 }
+export const MAX_TITLE_LENGTH = 120;
+export function copyTitle(title: string): string {
+  const prefix = 'Copy - ';
+  let result = prefix;
+  for (const character of title.startsWith(prefix) ? title.slice(prefix.length) : title) {
+    if (result.length + character.length > MAX_TITLE_LENGTH) break;
+    result += character;
+  }
+  return result.trimEnd();
+}
 export interface Draft {
   title: string;
   mode: 'quiz' | 'survey';
@@ -59,6 +80,12 @@ export interface Draft {
   showAnswer: 'wait_all' | 'after_response' | 'never';
   questions: Question[];
   answerDuration?: AnswerDuration;
+}
+export function normalizeSurveyAuthoring(draft: Draft): Draft {
+  if (draft.mode !== 'survey') return draft;
+  return { ...draft, questions: draft.questions.map(question =>
+    getSurveyQuestionType(question) === 'single' && question.survey?.other
+      ? { ...question, survey: { other: false, allowMultiple: false } } : question) };
 }
 export function getAnswerDuration(draft: Pick<Draft, 'questions' | 'answerDuration'>): AnswerDuration {
   if (draft.answerDuration) return draft.answerDuration;

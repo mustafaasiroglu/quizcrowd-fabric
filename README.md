@@ -122,7 +122,11 @@ and remembered shared seconds persist in the existing game JSON, so custom stays
 selected even when question times happen to match. Only older content without
 the setting infers an initial mode from its question durations. Effective
 question durations still drive game timers/scoring. A duplicate starts a new private
-lobby without activity. Six-digit codes preserve leading zeros; existing UUID
+lobby without activity, with a new ID/code and **Copy - ** title, before opening
+the copy's editor; the original stays unchanged. Survey questions support
+Single Select, Multiple Select (optional Other), and Free Text using the existing
+question JSON and answer encoding, without a database migration.
+Six-digit codes preserve leading zeros; existing UUID
 invitations and old codes remain compatible through server-side resolution.
 The original QR lobby, colorful answers, leaderboard and podium remain.
 **Dark is the default**; the only alternative is **Light**, saved across

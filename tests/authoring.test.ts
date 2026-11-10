@@ -2,7 +2,7 @@ import sql from 'mssql';
 import { describe, expect, it, vi } from 'vitest';
 import { execute } from '../rayfin/functions/src/service';
 import { authorDraft, createGame, draftSchema } from '../rayfin/functions/src/domain';
-import { getAnswerDuration, setAnswerDuration } from '../packages/shared/src/index';
+import { getAnswerDuration, getSurveyQuestionType, normalizeSurveyAuthoring, setAnswerDuration, setSurveyQuestionType } from '../packages/shared/src/index';
 import { isJoinCodeCollision, retryJoinCode, type Store, type UnitOfWork } from '../rayfin/functions/src/sql-store';
 
 const random = vi.hoisted(() => ({ value: 7 }));
@@ -32,6 +32,41 @@ function fixture(mode: 'quiz' | 'survey' = 'quiz') {
   return { store, legacy, games: () => games, game: () => games[0] };
 }
 describe('six-digit codes and owner authoring transactions (test store)', () => {
+  it('switches Survey types using existing flags and restores draft choices without changing the source', () => {
+    const source = fixture('survey').game().questions[0], before = structuredClone(source);
+    expect(getSurveyQuestionType(source)).toBe('single');
+    const multiple = setSurveyQuestionType(source, 'multiple');
+    expect(multiple.survey).toEqual({ other: false, allowMultiple: true });
+    const text = setSurveyQuestionType(multiple, 'text');
+    expect(text).toMatchObject({ options: [], survey: { other: true, allowMultiple: false } });
+    expect(getSurveyQuestionType(text)).toBe('text');
+    const restored = setSurveyQuestionType(text, 'single', source.options);
+    expect(restored.options).toEqual(source.options);
+    expect(restored.survey).toEqual({ other: false, allowMultiple: false });
+    expect(setSurveyQuestionType(text, 'multiple').options).toEqual(['', '']);
+    expect(source).toEqual(before);
+  });
+  it('rejects new Single Select + Other writes but preserves legacy read, duplicate and response contracts', async () => {
+    const f = fixture('survey');
+    f.game().questions[0].survey = { other: true, allowMultiple: false };
+    const legacy = authorDraft(f.game()), bytes = JSON.stringify(f.game());
+    expect(await execute(f.store, { command: 'edit', id: f.game().id }, 'owner', '')).toMatchObject({ draft: legacy });
+    for (const command of ['create', 'edit']) {
+      await expect(execute(f.store, { command, id: f.game().id, draft: legacy }, 'owner', '')).rejects.toThrow('Other is only available');
+    }
+    const copy = await execute(f.store, { command: 'duplicate', id: f.game().id }, 'owner', '') as { id: string };
+    expect(f.games().find(game => game.id === copy.id)?.questions).toEqual(legacy.questions);
+    expect(JSON.stringify(f.game())).toBe(bytes);
+    const normalized = normalizeSurveyAuthoring(legacy);
+    expect(normalized.questions[0].survey).toEqual({ other: false, allowMultiple: false });
+    expect(legacy.questions[0].survey?.other).toBe(true);
+    await execute(f.store, { command: 'edit', id: copy.id, draft: normalized }, 'owner', '');
+    expect(f.games().find(game => game.id === copy.id)?.questions[0].survey?.other).toBe(false);
+    const ticket = await execute(f.store, { command: 'join', id: f.game().id, nickname: 'Legacy' }, 'a', '', 1000) as { token: string };
+    await execute(f.store, { command: 'control', id: f.game().id, action: 'start', version: f.game().version }, 'owner', '', 2000);
+    await execute(f.store, { command: 'answer', id: f.game().id, questionIndex: 0, response: { options: [], other: 'Legacy | text' } }, 'a', ticket.token, 3000);
+    expect(f.game().answers[0]).toMatchObject({ format: 'survey-v1', option: 't:Legacy \\| text', points: 0 });
+  });
   it('persists survey flags and pipe answers through JSON, reopen, duplicate and existing service locks', async () => {
     const f = fixture('survey');
     const revised = { ...authorDraft(f.game()), questions: [
@@ -223,16 +258,53 @@ describe('six-digit codes and owner authoring transactions (test store)', () => 
     f.game().phase = 'leaderboard';
     await expect(execute(f.store, { command: 'control', id: f.game().id, action: 'next', version: f.game().version }, 'owner', '', 1002)).resolves.toEqual({ updated: true });
   });
-  it('duplicates a started public source into a fresh private session without copying activity', async () => {
-    const f = fixture(); f.game().visibility = 'public'; f.game().publicAcknowledged = true; f.game().phase = 'finished';
+  it.each(['quiz', 'survey'] as const)('duplicates a started public %s into a fresh persisted private copy without changing the source', async mode => {
+    const f = fixture(mode); f.game().visibility = 'public'; f.game().publicAcknowledged = true; f.game().phase = 'finished';
+    f.game().answerDuration = { mode: 'custom', seconds: 20 };
+    if (mode === 'survey') {
+      f.game().questions[0].survey = { other: true, allowMultiple: true };
+      f.game().questions.push({ text: 'Written feedback', options: [], correctIndex: null, duration: 35, survey: { other: true, allowMultiple: false } });
+    }
+    f.game().participants.push({ id: 'p', nickname: 'A', subject: 'a', tokenHash: 'secret', expiresAt: 9000, guestEpoch: 0, score: 2, streak: 1 });
     f.game().answers.push({ participantId: 'p', questionIndex: 0, option: 0, correct: true, points: 2 });
     const source = structuredClone(f.game());
+    const bytes = JSON.stringify(source);
     const copy = await execute(f.store, { command: 'duplicate', id: source.id }, 'owner', '', 5000) as { id: string; code: string };
     const created = f.games().find((g) => g.id === copy.id)!;
     expect(copy.code).toMatch(/^\d{6}$/); expect(copy.id).not.toBe(source.id); expect(copy.code).not.toBe(source.code);
-    expect(created).toMatchObject({ owner: 'owner', createdAt: 5000, visibility: 'internal', publicAcknowledged: false, phase: 'lobby', version: 0, questionIndex: -1, participants: [], answers: [], questions: source.questions });
-    expect(f.game()).toEqual(source);
+    expect(created).toMatchObject({ title: 'Copy - Team session', owner: 'owner', createdAt: 5000, visibility: 'internal', publicAcknowledged: false, phase: 'lobby', version: 0, questionIndex: -1, questionStartedAt: 0, revealStartedAt: 0, participants: [], answers: [], questions: source.questions, answerDuration: source.answerDuration });
+    expect(JSON.stringify(f.game())).toBe(bytes);
+    const listed = await execute(f.store, { command: 'list' }, 'owner', '') as { id: string }[];
+    expect(listed.map(item => item.id)).toEqual([source.id, copy.id]);
+    expect(await execute(f.store, { command: 'edit', id: copy.id }, 'owner', '')).toMatchObject({ readOnly: false, draft: { ...authorDraft(source), title: 'Copy - Team session', visibility: 'internal', publicAcknowledged: false } });
+    expect(await execute(f.store, { command: 'edit', id: source.id }, 'owner', '')).toMatchObject({ readOnly: true });
+    expect(JSON.stringify(f.game())).toBe(bytes);
     for (const subject of [null, 'stranger', 'admin']) await expect(execute(f.store, { command: 'duplicate', id: source.id }, subject, '')).rejects.toThrow();
+  });
+  it.each([
+    { title: 'A'.repeat(120), length: 120 },
+    { title: 'Copy - Team', length: 11 },
+    { title: 'a'.repeat(112) + '\u{1f600}', length: 119 },
+  ])('bounds copy titles without splitting characters or repeating the prefix: $length units', async ({ title, length }) => {
+    const f = fixture(); f.game().title = title;
+    const bytes = JSON.stringify(f.game());
+    const result = await execute(f.store, { command: 'duplicate', id: f.game().id }, 'owner', '') as { id: string };
+    const copy = f.games().find(game => game.id === result.id)!;
+    expect(copy.title).toHaveLength(length);
+    expect(copy.title).toMatch(/^Copy - (?!Copy - )/);
+    expect(copy.title).not.toMatch(/[\uD800-\uDFFF]/u);
+    expect(JSON.stringify(f.game())).toBe(bytes);
+    const again = await execute(f.store, { command: 'duplicate', id: copy.id }, 'owner', '') as { id: string };
+    expect(f.games().find(game => game.id === again.id)?.title).toBe(copy.title);
+    expect(again.id).not.toBe(copy.id);
+  });
+  it('does not persist or modify the source when a duplicate insert fails', async () => {
+    const f = fixture(), bytes = JSON.stringify(f.games());
+    const failing: Store = { transact: work => f.store.transact(tx => work({ ...tx,
+      save: async (game, create) => { if (create) throw new Error('Insert rejected'); await tx.save(game); },
+    })) };
+    await expect(execute(failing, { command: 'duplicate', id: f.game().id }, 'owner', '')).rejects.toThrow('Insert rejected');
+    expect(JSON.stringify(f.games())).toBe(bytes);
   });
   it('limits delete to the owner, not another creator or global config admin', async () => {
     const f = fixture();

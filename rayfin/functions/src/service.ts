@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { getAnswerDuration, MAX_SURVEY_TEXT_LENGTH } from '@rayfin-app/shared';
+import { copyTitle, getAnswerDuration, MAX_SURVEY_TEXT_LENGTH } from '@rayfin-app/shared';
 import type { Store } from './sql-store.js';
 import {
-  answer, control, createGame, Denied, Conflict, draftSchema, join, own, preview,
+  answer, control, createGame, Denied, Conflict, draftSchema, authoringDraftSchema, join, own, preview,
   settingsView, signed, view, visibilityAllowed, authorDraft, guestAllowed, readOnly, summary,
 } from './domain.js';
 
@@ -18,7 +18,7 @@ const requestSchema = z.object({
   questionIndex: z.number().int().min(0).max(39).optional(),
   option: z.number().int().min(0).max(5).optional(),
   response: z.object({ options: z.array(z.number().int().min(0).max(5)).max(6), other: z.string().max(MAX_SURVEY_TEXT_LENGTH).optional() }).strict().optional(),
-  draft: draftSchema.optional(),
+  draft: authoringDraftSchema.optional(),
 }).strict();
 
 export async function execute(
@@ -56,7 +56,7 @@ export async function execute(
         return { code: game.code };
       case 'duplicate': {
         own(game, subject);
-        const draft = { ...authorDraft(game), visibility: 'internal' as const, publicAcknowledged: false };
+        const draft = { ...authorDraft(game), title: copyTitle(game.title), visibility: 'internal' as const, publicAcknowledged: false };
         const copy = createGame(draft, subject, settings, now);
         await tx.save(copy, true);
         return { id: copy.id, code: copy.code };

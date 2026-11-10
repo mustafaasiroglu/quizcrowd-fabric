@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
-import type { Draft, Question } from '@rayfin-app/shared';
-import { getAnswerDuration, PUBLIC_WARNING, setAnswerDuration } from '@rayfin-app/shared';
+import type { Draft, Question, SurveyQuestionType } from '@rayfin-app/shared';
+import { getAnswerDuration, getSurveyQuestionType, MAX_TITLE_LENGTH, PUBLIC_WARNING, setAnswerDuration, setSurveyQuestionType } from '@rayfin-app/shared';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
+import { DurationInput } from './DurationInput';
 
 export const blankQuestion = (duration = 20): Question => ({ text: '', options: ['', '', '', ''], correctIndex: null, duration });
 export const blankDraft = (mode: Draft['mode'] = 'quiz'): Draft => ({
@@ -22,12 +23,31 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
 }) {
   const [removing, setRemoving] = useState<number>();
   const questionsRef = useRef<HTMLDivElement>(null);
+  const optionMemory = useRef(new WeakMap<Question, string[]>());
   const timing = getAnswerDuration(draft);
   function setDuration(mode: 'same' | 'custom', seconds = timing.seconds) {
-    onChange(setAnswerDuration(draft, { mode, seconds }));
+    const next = setAnswerDuration(draft, { mode, seconds });
+    next.questions.forEach((question, index) => {
+      const previous = draft.questions[index];
+      if (previous) {
+        const options = optionMemory.current.get(previous);
+        if (options) optionMemory.current.set(question, options);
+      }
+    });
+    onChange(next);
   }
-  function updateQuestion(index: number, patch: Partial<Question>) {
-    onChange({ ...draft, answerDuration: timing, questions: draft.questions.map((q, i) => i === index ? { ...q, ...patch } : q) });
+  function updateQuestion(index: number, patch: Partial<Question>, previousOptions?: string[]) {
+    onChange({ ...draft, answerDuration: timing, questions: draft.questions.map((q, i) => {
+      if (i !== index) return q;
+      const next = { ...q, ...patch }, remembered = previousOptions ?? patch.options ?? optionMemory.current.get(q);
+      if (remembered) optionMemory.current.set(next, remembered);
+      return next;
+    }) });
+  }
+  function changeSurveyType(index: number, type: SurveyQuestionType) {
+    const question = draft.questions[index]!;
+    const options = question.options.length ? question.options : optionMemory.current.get(question) ?? [];
+    updateQuestion(index, setSurveyQuestionType(question, type, options), options);
   }
   function move(index: number, direction: -1 | 1) {
     const questions = [...draft.questions], next = index + direction;
@@ -41,7 +61,7 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
     <form className="author-layout" onSubmit={(event) => { event.preventDefault(); if (!readOnly) onSave(); }}>
       <fieldset className="author-content" disabled={readOnly || busy}>
         <legend className="sr-only">Session content</legend>
-        <section className="card title-card"><label htmlFor="quiz-title">Title</label><input id="quiz-title" placeholder={draft.mode === 'quiz' ? 'Untitled live quiz' : 'Untitled live survey'} required maxLength={120} value={draft.title} onChange={(e) => onChange({ ...draft, title: e.target.value })} /></section>
+        <section className="card title-card"><label htmlFor="quiz-title">Title</label><input id="quiz-title" placeholder={draft.mode === 'quiz' ? 'Untitled live quiz' : 'Untitled live survey'} required maxLength={MAX_TITLE_LENGTH} value={draft.title} onChange={(e) => onChange({ ...draft, title: e.target.value })} /></section>
         <div ref={questionsRef}>{draft.questions.map((q, i) => <fieldset className="card question-editor" key={i}>
           <legend className="sr-only">Question {i + 1}</legend>
           <div className="section-heading question-heading"><h2>Question {i + 1}</h2>
@@ -49,13 +69,14 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
               <button type="button" className="icon-button" disabled={i === 0} aria-label={`Move question ${i + 1} up`} onClick={() => move(i, -1)}><Icon name="up" /></button>
               <button type="button" className="icon-button" disabled={i === draft.questions.length - 1} aria-label={`Move question ${i + 1} down`} onClick={() => move(i, 1)}><Icon name="down" /></button>
             </div>}
-            {timing.mode === 'custom' && <label className="duration"><Icon name="clock" /><span className="sr-only">Question {i + 1} duration in seconds</span><input type="number" min={5} max={120} required value={q.duration} onChange={(e) => updateQuestion(i, { duration: Number(e.target.value) })} /><span>s</span></label>}
+            {timing.mode === 'custom' && <DurationInput label={`Question ${i + 1} duration in seconds`} value={q.duration} onChange={duration => updateQuestion(i, { duration })} />}
             {draft.mode === 'survey' && <details className="question-settings" onKeyDown={(event) => {
               if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); }
             }}><summary className="icon-button" aria-label={`Question ${i + 1} settings`}><Icon name="settings" /></summary>
-              <div className="question-settings-menu"><label className="check"><input type="checkbox" aria-label={`Question ${i + 1} allow multiple`} checked={!!q.survey?.allowMultiple} disabled={!q.options.length} onChange={event => updateQuestion(i, { survey: { other: !!q.survey?.other, allowMultiple: event.target.checked } })} />Allow multiple</label>
-                {!q.options.length && <p className="small muted">Not applicable to a written-response-only question.</p>}
-              </div>
+              <fieldset className="question-settings-menu"><legend className="sr-only">Question {i + 1} response type</legend>
+                {([['single', 'Single Select'], ['multiple', 'Multiple Select'], ['text', 'Free Text']] as const).map(([type, label]) =>
+                  <label className="check" key={type}><input type="radio" name={`survey-type-${i}`} value={type} checked={getSurveyQuestionType(q) === type} onChange={() => changeSurveyType(i, type)} />{label}</label>)}
+              </fieldset>
             </details>}
             {!readOnly && draft.questions.length > 1 && <button type="button" className="icon-button delete-action" aria-label={`Remove question ${i + 1}`} onClick={() => setRemoving(i)}><Icon name="trash" /></button>}
           </div>
@@ -63,12 +84,14 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
           <div className="option-editor-grid">{q.options.map((option, k) => <div className={`option-editor ${draft.mode === 'quiz' && q.correctIndex === k ? 'is-correct' : ''}`} key={k}>
             {draft.mode === 'quiz' && <input type="radio" name={`correct-${i}`} required aria-label={`Question ${i + 1}, correct option ${k + 1}`} checked={q.correctIndex === k} onChange={() => updateQuestion(i, { correctIndex: k })} />}
             <label className="sr-only" htmlFor={`option-${i}-${k}`}>Question {i + 1}, option {k + 1}</label><input id={`option-${i}-${k}`} placeholder={`Option ${k + 1}`} required maxLength={300} value={option} onChange={(e) => updateQuestion(i, { options: q.options.map((o, n) => n === k ? e.target.value : o) })} />
-            {!readOnly && (q.options.length > 2 || (draft.mode === 'survey' && q.survey?.other)) && <button type="button" className="icon-button delete-action remove-option" aria-label={`Remove question ${i + 1} option ${k + 1}`} onClick={() => updateQuestion(i, removeOption(q, k))}><Icon name="trash" /></button>}
+            {!readOnly && (q.options.length > 2 || (draft.mode === 'survey' && getSurveyQuestionType(q) === 'multiple' && q.survey?.other)) && <button type="button" className="icon-button delete-action remove-option" aria-label={`Remove question ${i + 1} option ${k + 1}`} onClick={() => updateQuestion(i, removeOption(q, k))}><Icon name="trash" /></button>}
           </div>)}
-            {draft.mode === 'survey' && q.survey?.other && <div className="option-editor other-option"><span>Other <span className="small muted">(written response)</span></span>{!readOnly && <button type="button" className="icon-button delete-action" aria-label={`Remove question ${i + 1} Other`} disabled={q.options.length < 2} onClick={() => updateQuestion(i, { survey: { other: false, allowMultiple: !!q.survey?.allowMultiple } })}><Icon name="trash" /></button>}</div>}
+            {draft.mode === 'survey' && q.survey?.other && q.options.length > 0 && (getSurveyQuestionType(q) === 'multiple' || readOnly) && <div className="option-editor other-option"><span>Other <span className="small muted">(written response)</span></span>{!readOnly && <button type="button" className="icon-button delete-action" aria-label={`Remove question ${i + 1} Other`} disabled={q.options.length < 2} onClick={() => updateQuestion(i, { survey: { other: false, allowMultiple: true } })}><Icon name="trash" /></button>}</div>}
           </div>
-          {!readOnly && q.options.length < 4 && <button type="button" className="text-button" onClick={() => updateQuestion(i, { options: [...q.options, ''] })}><Icon name="plus" />Add option</button>}
-          {!readOnly && draft.mode === 'survey' && !q.survey?.other && <button type="button" className="text-button add-other" aria-label={`Add Other to question ${i + 1}`} onClick={() => updateQuestion(i, { survey: { other: true, allowMultiple: !!q.survey?.allowMultiple } })}><Icon name="plus" />Add Other</button>}
+          {draft.mode === 'survey' && getSurveyQuestionType(q) === 'text' && <p className="muted small">Respondents can write a free-text answer.</p>}
+          {draft.mode === 'survey' && getSurveyQuestionType(q) === 'single' && q.survey?.other && !readOnly && <p className="muted small">This legacy question includes Other. Choose Multiple Select to keep it when saving; Single Select saves normal choices only.</p>}
+          {!readOnly && q.options.length < 4 && (draft.mode === 'quiz' || getSurveyQuestionType(q) !== 'text') && <button type="button" className="text-button" onClick={() => updateQuestion(i, { options: [...q.options, ''] })}><Icon name="plus" />Add option</button>}
+          {!readOnly && draft.mode === 'survey' && getSurveyQuestionType(q) === 'multiple' && !q.survey?.other && <button type="button" className="text-button add-other" aria-label={`Add Other to question ${i + 1}`} onClick={() => updateQuestion(i, { survey: { other: true, allowMultiple: true } })}><Icon name="plus" />Add Other</button>}
           {draft.mode === 'quiz' && <p className="muted small option-hint">Select the circle beside the correct answer.</p>}
         </fieldset>)}</div>
         {!readOnly && <div className="editor-actions"><button type="button" className="outline-primary" disabled={draft.questions.length >= 40} onClick={() => {
@@ -86,10 +109,10 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
           {draft.visibility === 'public' && <div className="warning"><p>{PUBLIC_WARNING}</p><label className="check"><input type="checkbox" checked={draft.publicAcknowledged} onChange={(e) => onChange({ ...draft, publicAcknowledged: e.target.checked })} required />I understand and choose public access.</label></div>}</div>
           <div className="settings-group"><fieldset className="duration-settings"><legend>Answer duration</legend>
             <div className="shared-duration-choice"><label className="check"><input type="radio" name="answer-duration" value="same" checked={timing.mode === 'same'} onChange={() => setDuration('same')} />Same for all questions</label>
-              {timing.mode === 'same' && <label className="global-duration" htmlFor="shared-duration"><span className="sr-only">Duration in seconds for all questions</span><input id="shared-duration" type="number" min={5} max={120} required value={timing.seconds} onChange={(e) => setDuration('same', Number(e.target.value))} /><span aria-hidden="true">s</span></label>}
+              {timing.mode === 'same' && <DurationInput id="shared-duration" label="Duration in seconds for all questions" value={timing.seconds} onChange={seconds => setDuration('same', seconds)} />}
             </div>
-            <label className="check"><input type="radio" name="answer-duration" value="custom" checked={timing.mode === 'custom'} onChange={() => setDuration('custom')} />Customize per question</label>
-            {timing.mode === 'custom' && <p className="small muted">Set the answer time at the top of each question.</p>}
+            <label className="check custom-duration-choice"><input type="radio" name="answer-duration" value="custom" aria-describedby={timing.mode === 'custom' ? 'custom-duration-help' : undefined} checked={timing.mode === 'custom'} onChange={() => setDuration('custom')} /><span>Customize per question</span></label>
+            {timing.mode === 'custom' && <p id="custom-duration-help" className="small muted option-help">Set the answer time at the top of each question.</p>}
           </fieldset></div>
           <div className="settings-group"><fieldset className="late-join-settings"><legend>Allow late joins?</legend>
             <label className="check"><input type="radio" name="late-join" value="deny" checked={!draft.lateJoin} onChange={() => onChange({ ...draft, lateJoin: false })} />Don&apos;t allow late join</label>

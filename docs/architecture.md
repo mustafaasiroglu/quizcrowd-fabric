@@ -152,6 +152,18 @@ otherwise at least two are required. Other-only questions reject
 `allowMultiple: true`. Quiz questions reject survey metadata and retain numeric
 single-choice answers, correctness and scoring.
 
+The editor infers three types from those existing fields: Single Select
+(normal options, multiple off), Multiple Select (multiple on, optional Other),
+and Free Text (no normal options, Other on, multiple off). New create/edit
+requests use `authoringDraftSchema`, which rejects mixed Single Select + Other.
+The base stored-content validator and answer projection still support that
+legacy shape: read and duplicate do not rewrite old flags or submissions.
+Explicit frontend saves normalize an editable legacy Single Select question
+to normal choices only, with visible guidance to select Multiple Select to
+retain Other. No type column or extra persisted type discriminator is needed.
+Temporarily remembered choices when switching to Free Text belong only to
+the unsaved editor, never the persisted question/answer payload.
+
 The answer request supplies exactly one of legacy numeric `option` or typed
 `response: { options: number[], other?: string }`. Presence of `other` explicitly
 selects Other; it is not an unrelated annotation on a normal answer. The server

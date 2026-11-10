@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AnswerSubmission, AuthorView, Draft, GameView, QuizSummary, SettingsView } from '@rayfin-app/shared';
+import { normalizeSurveyAuthoring } from '@rayfin-app/shared';
 import type { OpaqueSession } from '@microsoft/rayfin-auth';
 import { call, connect, type Connection } from './lib/rayfin-client';
 import { AuthorEditor, blankDraft } from './components/AuthorEditor';
@@ -8,6 +9,7 @@ import { Icon } from './components/Icon';
 import { ThemeSwitch } from './components/ThemeSwitch';
 import { SessionLibrary } from './components/SessionLibrary';
 import { AccountMenu } from './components/AccountMenu';
+import { Brand } from './components/Brand';
 import { isGameId, parseRoute, routeUrl, type AppRoute } from './lib/routes';
 
 type Ticket = { id: string; token: string; guest: boolean; nickname?: string };
@@ -245,7 +247,7 @@ export default function App() {
     {page !== 'author' && <div className={`shapes-wrapper ${page === 'home' ? 'workspace-shapes' : ''}`} aria-hidden="true">{Array.from({ length: 12 }, (_, i) => <span key={i} />)}</div>}
     <a className="skip-link" href="#content">Skip to content</a>
     <header className="app-toolbar">
-      <button className="brand small-brand" onClick={home}><span>Quiz</span><span>Crowd</span></button>
+      <Brand onHome={home} />
       <nav className="toolbar-actions" aria-label="Account and appearance">
         <ThemeSwitch />
         {signedIn ? <AccountMenu busy={busy} onSignOut={signOut} /> : <button className="subtle" disabled={!connection || busy} onClick={signIn}><Icon name="join" />Sign in with Microsoft Entra</button>}
@@ -302,7 +304,7 @@ export default function App() {
           if (current()) { setDraft(saved.draft); setReadOnly(saved.readOnly); }
         }
       }) : undefined} onSave={() => void run(async (current) => {
-        const saved = await call<{ id: string }>(connection!, { command: editing ? 'edit' : 'create', id: editing, draft });
+        const saved = await call<{ id: string }>(connection!, { command: editing ? 'edit' : 'create', id: editing, draft: normalizeSurveyAuthoring(draft) });
         if (current()) host(saved.id);
       })} />}
       {route.page === 'game' && !route.host && ticket?.id !== route.id && <section className="card sign-in-card"><h1>Join this session</h1><p className="muted">The attendee credential is stored only in the tab where you joined.</p><button className="primary" onClick={() => navigate({ page: 'join', invitation: route.id })}>Join Quiz</button></section>}

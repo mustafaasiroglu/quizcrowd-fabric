@@ -1,12 +1,12 @@
 import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Draft, GameView, Phase, Question, QuizSummary, SettingsView, SurveyResponse } from '@rayfin-app/shared';
-import { decodeSurveyResponse, encodeSurveyResponse, getAnswerDuration, MAX_SURVEY_ANSWER_LENGTH, MAX_SURVEY_TEXT_LENGTH } from '@rayfin-app/shared';
+import { decodeSurveyResponse, encodeSurveyResponse, getAnswerDuration, MAX_TITLE_LENGTH, MAX_SURVEY_ANSWER_LENGTH, MAX_SURVEY_TEXT_LENGTH } from '@rayfin-app/shared';
 
 export class Denied extends Error {}
 export class Conflict extends Error {}
 export const draftSchema = z.object({
-  title: z.string().trim().min(1).max(120),
+  title: z.string().trim().min(1).max(MAX_TITLE_LENGTH),
   mode: z.enum(['quiz', 'survey']),
   visibility: z.enum(['internal', 'public']).default('internal'),
   publicAcknowledged: z.boolean().default(false),
@@ -40,6 +40,17 @@ export const draftSchema = z.object({
     }
     if (draft.mode === 'survey' && q.correctIndex !== null) {
       ctx.addIssue({ code: 'custom', message: 'Surveys cannot have an answer key', path: ['questions', i] });
+    }
+  });
+});
+
+// Stored legacy single-choice + Other questions remain readable and copyable.
+// New authoring requests must use Multiple Select for mixed choices + Other.
+export const authoringDraftSchema = draftSchema.superRefine((draft, ctx) => {
+  if (draft.mode !== 'survey') return;
+  draft.questions.forEach((question, index) => {
+    if (question.options.length && question.survey?.other && !question.survey.allowMultiple) {
+      ctx.addIssue({ code: 'custom', message: 'Other is only available for Multiple Select or Free Text', path: ['questions', index, 'survey'] });
     }
   });
 });

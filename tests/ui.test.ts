@@ -14,6 +14,7 @@ let ui: {
   renderEditor(draft?: Partial<Draft>, anonymousEnabled?: boolean, readOnly?: boolean, editing?: boolean): string;
   removeOption(question: Question, index: number): Question;
   renderIcon(): string;
+  renderBrand(): string;
 };
 beforeAll(async () => {
   const entry = 'virtual:quizcrowd-ui-regression';
@@ -31,9 +32,11 @@ beforeAll(async () => {
         import { AuthorEditor, blankDraft, removeOption } from './src/components/AuthorEditor';
         import { GameScreen } from './src/components/GameScreen';
         import { Icon } from './src/components/Icon';
+        import { Brand } from './src/components/Brand';
         export { removeOption };
         const noop = () => {};
         export function renderIcon() { return renderToStaticMarkup(h(Icon, {name:'settings'})); }
+        export function renderBrand() { return renderToStaticMarkup(h(Brand, {onHome:noop})); }
         export function renderEditor(patch = {}, anonymousEnabled = false, readOnly = false, editing = false) {
           return renderToStaticMarkup(h(AuthorEditor, {draft:{...blankDraft(),...patch},onChange:noop,editing,anonymousEnabled,readOnly,busy:false,onSave:noop,onBack:noop}));
         }
@@ -55,6 +58,27 @@ beforeAll(async () => {
 }, 20000);
 
 describe('original QuizCrowd screen structure with Fabric authorization controls', () => {
+  it('uses an original four-tile monochrome mark with one outlined tile and an accessible home brand', () => {
+    const brand = ui.renderBrand();
+    expect(brand).toContain('aria-label="QuizCrowd home"');
+    expect(brand).toContain('class="brand-wordmark"><span>Quiz</span><span>Crowd</span>');
+    expect(brand).toContain('viewBox="0 0 24 24"');
+    expect(brand).toContain('aria-hidden="true" focusable="false"');
+    expect(brand.match(/<rect /g)).toHaveLength(4);
+    expect(brand.match(/fill="none"/g)).toHaveLength(1);
+    expect(brand).toContain('stroke="currentColor" stroke-width="2"');
+  });
+  it('reuses the compact clock/value/s control and associates indented custom-duration help', () => {
+    const shared = ui.renderEditor();
+    expect(shared).toContain('class="duration" for="shared-duration"');
+    expect(shared).toContain('<span aria-hidden="true">s</span>');
+    expect(shared).not.toContain('class="global-duration"');
+    expect(shared).not.toContain('>seconds</span>');
+    const custom = ui.renderEditor({ answerDuration: { mode: 'custom', seconds: 20 } });
+    expect(custom).toContain('aria-describedby="custom-duration-help"');
+    expect(custom).toContain('id="custom-duration-help" class="small muted option-help"');
+    expect(custom).toContain('Question 1 duration in seconds');
+  });
   it('shares one closed gear outline and independently centered ring without changing icon presentation', () => {
     const icon = ui.renderIcon();
     expect(icon).toContain('class="icon"');
@@ -152,7 +176,7 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(editable).not.toContain('value="quiz"');
     expect(editable).toContain('Same for all questions');
     expect(editable).toContain('id="shared-duration"');
-    expect(editable).not.toContain('class="duration"');
+    expect(editable.slice(0, editable.indexOf('<aside'))).not.toContain('class="duration"');
     expect(editable).toContain('<legend>Answer duration</legend>');
     const custom = ui.renderEditor({ answerDuration: { mode: 'custom', seconds: 20 }, questions: [20, 35].map(duration => ({ text: 'Question', options: ['A', 'B'], correctIndex: 0, duration })) });
     expect(custom).toContain('class="duration"');
@@ -211,16 +235,22 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(ui.removeOption(question, 2).correctIndex).toBeNull();
     expect(ui.removeOption({ ...question, correctIndex: null }, 0).correctIndex).toBeNull();
   });
-  it('offers survey-only Other/multiple settings and normalizes the last option removal', () => {
+  it('offers three Survey types and Other only for multiple choices, normalizing the last option removal', () => {
     expect(ui.renderEditor()).not.toContain('Allow multiple');
     expect(ui.renderEditor()).not.toContain('Add Other');
-    expect(ui.renderEditor({ mode: 'survey' })).toContain('Add Other');
+    const single = ui.renderEditor({ mode: 'survey' });
+    for (const label of ['Single Select', 'Multiple Select', 'Free Text']) expect(single).toContain(label);
+    expect(single).not.toContain('Add Other');
+    expect(ui.renderEditor({ mode: 'survey', questions: [{ text: 'Q', options: ['A', 'B'], correctIndex: null, duration: 20, survey: { other: false, allowMultiple: true } }] })).toContain('Add Other');
     const question: Question = { text: 'Write feedback', options: ['A'], correctIndex: null, duration: 20, survey: { other: true, allowMultiple: true } };
     const onlyOther = ui.removeOption(question, 0);
     expect(onlyOther).toMatchObject({ options: [], correctIndex: null, survey: { other: true, allowMultiple: false } });
     const editor = ui.renderEditor({ mode: 'survey', questions: [onlyOther] });
     expect(editor).toContain('Question 1 settings');
-    expect(editor).toMatch(/<input(?=[^>]*aria-label="Question 1 allow multiple")(?=[^>]*disabled="")[^>]*>/);
+    expect(editor).toMatch(/<input(?=[^>]*name="survey-type-0")(?=[^>]*value="text")(?=[^>]*checked="")[^>]*>/);
+    expect(editor).not.toContain('Add Other');
+    expect(editor).not.toContain('class="other-option"');
+    expect(editor).not.toContain('Add option</button>');
     expect(ui.renderEditor({ mode: 'survey', questions: [onlyOther] }, false, true)).toContain('class="author-content" disabled=""');
   });
   it('renders accessible survey radios/checkboxes and Other-only input without a visible Other label', () => {

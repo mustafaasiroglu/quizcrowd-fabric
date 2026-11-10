@@ -65,6 +65,17 @@ gear and independently centered ring, with the same current-color stroke,
 rounded joins and nonshrinking icon sizing as the other controls. It replaces
 the previous asymmetric outer contour without changing menus or hit targets.
 
+The shared header brand adds an original monochrome four-tile mark beside the
+unchanged QuizCrowd wordmark: three filled rounded squares and one outlined
+square in a balanced 2x2 grid. `components/Brand.tsx` is the canonical SVG
+component, using the existing theme-aware purple text token and a 24-unit
+viewBox. The glyph is decorative; the button retains the accessible
+**QuizCrowd home** name across home, join, editor, gameplay and admin.
+Browser review exports the actual glyph to
+`rayfin\.temp\routing-review\quizcrowd-mark.svg` and `quizcrowd-mark.png`,
+and captures each theme/viewport header. These are generated review artifacts,
+not new external resources or an added icon dependency.
+
 All screens share one 1280px maximum-width shell and responsive horizontal
 padding, including editor/settings, admin and gameplay. Inner join, lobby and
 results cards keep their narrower readable widths within that shell. The editor
@@ -154,6 +165,13 @@ visibility. Duplicate produces a new private lobby without activity; delete
 requires explicit confirmation and owner authorization. An unanswered, unstarted
 lobby remains editable even with attendees. Response count means individual
 question submissions, not the number of people.
+Duplicate commits a new record before opening that copy's editable screen:
+its ID/code are different, its recent card is additional, and the original
+content/activity/read-only state remain unchanged. The title starts **Copy - **,
+with a single prefix when duplicating another copy. Titles remain within 120
+UTF-16 code units without splitting a Unicode code point. Content type,
+questions, Other/multiple flags, durations and reveal/late-join settings carry
+over; visibility resets to internal without a public acknowledgement.
 
 New Live Survey creates a Survey; New Live Quiz creates a Quiz. Content Type is
 fixed by the creation action and not shown in Settings; API updates reject type changes and
@@ -171,16 +189,36 @@ When the publisher disables public attendance, the option title becomes
 is omitted. The anonymous-response description remains; the native radio is
 still disabled and the server/global/public-acknowledgement boundaries are unchanged.
 
-## Survey Other and Allow multiple
+## Survey question types and Other
 
-Survey questions offer **Add Other** below the normal choices, and an accessible
-question-settings disclosure in the upper-right with an **Allow multiple**
-checkbox. Quiz questions expose neither feature. With Other enabled, creators
-can remove every normal option. Removing the last one turns Allow multiple off
-and disables it, because a single written response cannot contain multiple
-choices. The server independently rejects that unsupported combination.
+The upper-right question-settings disclosure offers three native, mutually
+exclusive radio choices with keyboard navigation:
+
+| Choice | Existing JSON representation | Authoring |
+| --- | --- | --- |
+| Single Select | Normal options; `other:false`, `allowMultiple:false` (or absent legacy flags) | One answer; no Add Other action |
+| Multiple Select | Normal options; `allowMultiple:true` | Multiple answers; optional Add Other/remove Other |
+| Free Text | No normal options; `other:true`, `allowMultiple:false` | Written response only, no visible Other row/action |
+
+Quiz questions expose none of these features. With multiple-choice Other
+enabled, creators can remove every normal option; removing the last one
+selects Free Text. The server rejects Other-only with multiple selection.
 Other cannot be removed until two normal choices remain, preventing an empty
 or invalid single-choice question.
+Switching to Free Text removes normal choices from the submitted/persisted
+question, but keeps them in the current unsaved editor draft for switching
+back, including across duration/text edits. After reopening a saved Free Text
+question, switching back starts with two empty required choices. No hidden
+normal choices or extra type metadata are persisted.
+
+Existing single-choice + Other records remain playable, readable and copyable
+without silently rewriting their content/answers. The menu infers Single Select
+for this legacy shape; read-only authoring still displays its Other row.
+Editable legacy questions explain that choosing Multiple Select retains Other,
+while an explicit save as Single Select removes it. New create/edit requests
+reject mixed single-choice + Other; frontend save normalization never mutates
+the source on read. A legacy question with only one normal choice must add
+another choice or switch type before saving as Single Select.
 
 Attendees use radio choices by default or checkboxes when Allow multiple is on,
 then **Submit response**. Selecting Other shows a required written-response
@@ -203,13 +241,17 @@ not as extra submitted responses.
 
 ## Answer duration
 
-New content defaults to **Same for all questions**, 20 seconds. Only the settings
-panel shows the compact 60px numeric input inline beside this choice, with a
-visible seconds unit and an accessible label. The row can wrap on very narrow
+New content defaults to **Same for all questions**, 20 seconds. The settings
+panel uses the same compact combined control as per-question timing: a small
+clock, 48px numeric input/spinner and **s**, all inside one bordered wrapper.
+No seconds text or separate unit appears outside the control. Its accessible
+label still specifies seconds. The row can wrap on very narrow
 screens without overflowing; questions have no timer controls in this mode.
 The Answer duration heading has no decorative clock icon.
 **Customize per question** shows a duration at the top of every question and
 removes the shared input. Values must be whole seconds from 5 through 120.
+Its help text is indented to align with the option text, not the radio circle,
+and is associated with that radio using `aria-describedby`.
 Changing to custom initializes questions with the current shared value.
 Changing back uses the remembered shared value, or the first question's value
 for legacy custom content, deterministically. New questions inherit that value.
