@@ -41,7 +41,7 @@ DOM changes into the platform page.
 
 | Screen | Behavior |
 | --- | --- |
-| Home | Larger icon/title/description New Live Quiz / New Live Survey / Join with Code action tiles, Recent Items with Your recent quiz and surveys.; stacked on mobile |
+| Home | Compact content-width icon/title/description New Live Quiz / New Live Survey / Join with Code actions; matching borders, 12px padding/radius and subtle 1.01 hover scale; Recent Items with Your recent quiz and surveys.; stacked on mobile |
 | Join | Narrow card, six-digit numeric string code including leading zeros, separate nickname step; old links resolve; no pre-join preview action |
 | Author | Wide title/questions column with white Light surfaces or dark indigo surfaces; compact question cards, correctness controls, options and reordering |
 | Settings | Right sidebar on desktop, stacked on mobile; Who can respond? first, then answer duration, late joins and answer reveal; no Content Type label/control |

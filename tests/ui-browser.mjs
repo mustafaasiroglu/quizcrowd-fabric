@@ -200,7 +200,24 @@ try {
         assert.equal(await evaluate('document.documentElement.dataset.theme'), theme);
         assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions button")].map(e=>e.getAttribute("aria-label"))'), ['New Live Quiz','New Live Survey','Join with Code']);
         assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions .action-description")].map(e=>e.textContent)'), ['Create a quiz and host it live.','Collect feedback in a live survey.','Enter a game code to take part.']);
-        assert.equal(await evaluate('document.querySelector(".home-actions button").getBoundingClientRect().height >= 116'), true);
+        const actions = await evaluate(`(() => {
+          const parent=document.querySelector(".home-actions");
+          return {width:parent.clientWidth,buttons:[...parent.children].map(e=>{
+            const s=getComputedStyle(e);
+            return {width:e.offsetWidth,height:e.offsetHeight,top:e.offsetTop,left:e.offsetLeft,border:s.borderWidth,style:s.borderStyle,radius:s.borderRadius,padding:s.padding};
+          })};
+        })()`);
+        for (const action of actions.buttons) {
+          assert.ok(action.height >= 72 && action.height <= 84, `${label}: compact readable action height`);
+          assert.equal(action.border, '1px');
+          assert.equal(action.style, 'solid');
+          assert.equal(action.radius, '12px');
+          assert.equal(action.padding, '12px 16px');
+        }
+        if (size === 'desktop') {
+          assert.equal(new Set(actions.buttons.map(e=>e.top)).size, 1, 'desktop actions align in one row');
+          assert.ok(actions.buttons.reduce((sum,e)=>sum+e.width,24) < actions.width * .85, 'desktop actions do not stretch across the row');
+        }
         assert.equal(await evaluate('document.body.textContent.includes("Publisher bootstrap identity")'), false);
         assert.equal(await evaluate('document.body.textContent.includes("Your Quizzes")'), false);
         assert.equal(await evaluate('document.querySelector(".session-cover") === null'), true);
@@ -221,6 +238,20 @@ try {
           assert.equal(await evaluate('getComputedStyle(document.querySelector(".home-actions .primary")).color'), 'rgb(255, 255, 255)');
         }
         await cdp.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] }, session);
+        const actionNodes = [];
+        for (let i=1;i<=3;i++) {
+          const {nodeId:actionId} = await cdp.call('DOM.querySelector', {nodeId:root.nodeId,selector:`.home-actions > button:nth-child(${i})`}, session);
+          actionNodes.push(actionId);
+        }
+        await cdp.call('Emulation.setEmulatedMedia', {features:[{name:'prefers-reduced-motion',value:'no-preference'}]}, session);
+        for (const actionId of actionNodes) await cdp.call('CSS.forcePseudoState', {nodeId:actionId,forcedPseudoClasses:['hover']}, session);
+        await pause(250);
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions > button")].map(e=>getComputedStyle(e).transform)'), Array(3).fill('matrix(1.01, 0, 0, 1.01, 0, 0)'));
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions > button")].map(e=>({width:e.offsetWidth,height:e.offsetHeight,top:e.offsetTop,left:e.offsetLeft}))'), actions.buttons.map(({width,height,top,left})=>({width,height,top,left})), 'hover does not shift layout');
+        await inspectScreen(`${label}-home-hover`);
+        await cdp.call('Emulation.setEmulatedMedia', {features:[{name:'prefers-reduced-motion',value:'reduce'}]}, session);
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions > button")].map(e=>getComputedStyle(e).transform)'), Array(3).fill('none'));
+        for (const actionId of actionNodes) await cdp.call('CSS.forcePseudoState', {nodeId:actionId,forcedPseudoClasses:[]}, session);
         await screenshot(`${label}-home`);
       });
       await check(`${label}: avatar account menu, keyboard and outside dismissal`, async () => {
