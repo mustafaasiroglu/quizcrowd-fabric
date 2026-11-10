@@ -75,6 +75,23 @@ describe('authorization and private projections', () => {
     expect(() => view(g, first.token, 'alice', enabled, 3000)).toThrow();
     expect(view(g, second.token, 'alice', enabled, 3000).phase).toBe('question');
   });
+  it('applies new-attendee status and audience gates even when the owner joins as an attendee', () => {
+    for (const mode of ['quiz', 'survey']) {
+      const questions = draft.questions.map(question => ({ ...question, correctIndex: mode === 'quiz' ? 0 : null }));
+      const closed = make({ mode, questions });
+      start(closed);
+      expect(() => join(closed, 'Owner attendee', 'owner', enabled, 3000)).toThrow('not accepting new attendees');
+      const open = make({ mode, questions, lateJoin: true });
+      start(open);
+      const ticket = join(open, 'Owner attendee', 'owner', enabled, 3000);
+      expect(view(open, ticket.token, 'owner', enabled, 3000).phase).toBe('question');
+      expect(open.participants[0].subject).toBe('owner');
+      expect(() => join(open, 'Guest', null, enabled, 3000)).toThrow(Denied);
+      open.phase = 'finished';
+      expect(() => join(open, 'New attendee', 'new-subject', enabled, 3000)).toThrow('not accepting new attendees');
+      expect(join(open, 'Owner attendee', 'owner', enabled, 3000).token).not.toBe(ticket.token);
+    }
+  });
   it('revokes existing guests and does not resurrect them when reenabled', () => {
     const g = makePublic();
     const ticket = join(g, 'Guest', null, enabled, 1000);

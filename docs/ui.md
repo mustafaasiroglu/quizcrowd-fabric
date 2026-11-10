@@ -133,6 +133,14 @@ server ownership/admin checks; an arbitrary `returnTo` is never followed.
 Anonymous and non-admin callers cannot use the admin form, and hiding its
 header shortcut is not authorization. Sign-out clears attendee and private UI state.
 
+Owner read-only **View Live Quiz/Survey** screens keep **Open Lobby** and offer
+**Join As Attendee**. This navigates to `/join/?code=<session-code>` using the
+saved canonical code; it does not join, start the session or reuse host identity
+as an attendee credential. The normal nickname, Entra/guest and server audience
+checks still run. A finished session, or a started session with late joining
+disabled, shows a disabled action with its reason. These are snapshot-based UI
+hints: the server rechecks current state when a caller actually joins.
+
 The Join/back regression was reproduced with a pending list refresh: old `home()`
 wrapped refresh in global `busy`, disabling every home action. Refresh now has
 its own nonblocking status. Navigation and identity generations invalidate stale
@@ -145,8 +153,12 @@ current screen remain visible.
 
 The light theme uses the same geometry, hierarchy and interactions, with pale
 backgrounds, dark text and readable accent variants. Muted text is more opaque
-than the original, and colored answer/podium blocks use dark foregrounds where
-white would fail text-contrast checks. Filled primary actions use white text in
+than the original. Filled answer tiles use white text and darker versions of
+their red/blue/amber/green/purple/orange families, each exceeding 4.5:1 against
+white. Hover/disabled shading affects only the fill, not text opacity; selected
+Survey labels retain white text. Podium blocks retain their separate dark
+foreground; neutral editor fields, supplemental Other and written-response
+inputs are not changed to white. Filled primary actions use white text in
 both themes, including hover/focus/active/disabled states. The editor's generic
 outline-button hover rule explicitly excludes filled primary/secondary buttons;
 it previously overrode their white foreground with dark text in Light mode.

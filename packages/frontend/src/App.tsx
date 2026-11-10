@@ -30,7 +30,8 @@ export default function App() {
   const [draft, setDraft] = useState<Draft>(blankDraft);
   const editing = route.page === 'author' && route.id ? route.id : undefined;
   const [authorReady, setAuthorReady] = useState(false);
-  const [readOnly, setReadOnly] = useState(false);
+  const [author, setAuthor] = useState<AuthorView>();
+  const readOnly = author?.readOnly ?? false;
   const [quizzes, setQuizzes] = useState<QuizSummary[]>([]);
   const [ticket, setTicket] = useState<Ticket>();
   const [game, setGame] = useState<GameView>();
@@ -95,7 +96,7 @@ export default function App() {
         sessionStorage.removeItem(TICKET_KEY);
         operation.current++; refreshVersion.current++;
         setBusy(false); setRefreshing(false); setAuthorReady(false);
-        setGame(undefined); setTicket(undefined); setQuizzes([]); setSettings(undefined); setDraft(blankDraft());
+        setGame(undefined); setTicket(undefined); setQuizzes([]); setSettings(undefined); setDraft(blankDraft()); setAuthor(undefined);
       });
     }).catch((e: unknown) => setError(message(e)));
     return () => { active = false; unsubscribe?.(); };
@@ -149,12 +150,12 @@ export default function App() {
   useEffect(() => {
     if (route.page !== 'author' || !signedIn || !connection) return;
     if (!route.id) {
-      setDraft(blankDraft(route.mode)); setReadOnly(false); setAuthorReady(true); return;
+      setDraft(blankDraft(route.mode)); setAuthor(undefined); setAuthorReady(true); return;
     }
     let active = true;
     const navigation = navigationVersion.current, identity = identityVersion.current;
     call<AuthorView>(connection, { command: 'edit', id: route.id })
-      .then((saved) => { if (active && navigation === navigationVersion.current && identity === identityVersion.current) { setDraft(saved.draft); setReadOnly(saved.readOnly); setAuthorReady(true); } })
+      .then((saved) => { if (active && navigation === navigationVersion.current && identity === identityVersion.current) { setDraft(saved.draft); setAuthor(saved); setAuthorReady(true); } })
       .catch((e: unknown) => { if (active && navigation === navigationVersion.current && identity === identityVersion.current) setError(message(e)); });
     return () => { active = false; };
   }, [connection, signedIn, session, routeKey]);
@@ -227,6 +228,8 @@ export default function App() {
     if (current()) setGame(next);
   }
   const joinUrl = game ? `${location.origin}${routeUrl({ page: 'join', invitation: game.code })}` : '';
+  const joinUnavailableReason = author?.phase === 'finished' ? 'This session has finished.'
+    : author && author.phase !== 'lobby' && !author.draft.lateJoin ? 'This session does not allow late joins.' : undefined;
   const back = <button className="icon-button" aria-label="Go back" onClick={home}><Icon name="back" /></button>;
   const recent = <SessionLibrary quizzes={quizzes} busy={busy} onOpen={(q) => openDraft(q.id)}
     onDuplicate={(id) => void run(async (current) => { const copy = await call<{ id: string }>(connection!, { command: 'duplicate', id }); if (current()) openDraft(copy.id); })}
@@ -288,11 +291,13 @@ export default function App() {
         </section>
       </div>}
       {page === 'author' && signedIn && !authorReady && <p role="status">{error ? 'Session unavailable.' : 'Loading editor...'}</p>}
-      {page === 'author' && signedIn && authorReady && <AuthorEditor key={routeKey} draft={draft} onChange={setDraft} editing={!!editing} readOnly={readOnly} anonymousEnabled={!!settings?.anonymousEnabled} busy={busy} onBack={home} onHost={editing ? () => host(editing) : undefined} onRevokePublic={editing && draft.visibility === 'public' ? () => void run(async (current) => {
+      {page === 'author' && signedIn && authorReady && <AuthorEditor key={routeKey} draft={draft} onChange={setDraft} editing={!!editing} readOnly={readOnly} anonymousEnabled={!!settings?.anonymousEnabled} busy={busy} onBack={home} onHost={editing ? () => host(editing) : undefined}
+        onJoin={readOnly && author ? () => navigate({ page: 'join', invitation: author.code }) : undefined} joinUnavailableReason={joinUnavailableReason}
+        onRevokePublic={editing && draft.visibility === 'public' ? () => void run(async (current) => {
         await call(connection!, { command: 'visibility', id: editing, visibility: 'internal' });
         if (current()) {
           const saved = await call<AuthorView>(connection!, { command: 'edit', id: editing });
-          if (current()) { setDraft(saved.draft); setReadOnly(saved.readOnly); }
+          if (current()) { setDraft(saved.draft); setAuthor(saved); }
         }
       }) : undefined} onSave={() => void run(async (current) => {
         const saved = await call<{ id: string }>(connection!, { command: editing ? 'edit' : 'create', id: editing, draft });

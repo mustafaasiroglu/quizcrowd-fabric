@@ -11,7 +11,7 @@ const game: GameView = {
 };
 let ui: {
   renderGame(game: GameView, host?: boolean): string;
-  renderEditor(draft?: Partial<Draft>, anonymousEnabled?: boolean, readOnly?: boolean, editing?: boolean): string;
+  renderEditor(draft?: Partial<Draft>, anonymousEnabled?: boolean, readOnly?: boolean, editing?: boolean, session?: { joinUnavailableReason?: string; busy?: boolean }): string;
   removeOption(question: Question, index: number): Question;
   renderIcon(): string;
   renderBrand(): string;
@@ -37,8 +37,8 @@ beforeAll(async () => {
         const noop = () => {};
         export function renderIcon() { return renderToStaticMarkup(h(Icon, {name:'settings'})); }
         export function renderBrand() { return renderToStaticMarkup(h(Brand, {onHome:noop})); }
-        export function renderEditor(patch = {}, anonymousEnabled = false, readOnly = false, editing = false) {
-          return renderToStaticMarkup(h(AuthorEditor, {draft:{...blankDraft(),...patch},onChange:noop,editing,anonymousEnabled,readOnly,busy:false,onSave:noop,onBack:noop}));
+        export function renderEditor(patch = {}, anonymousEnabled = false, readOnly = false, editing = false, session) {
+          return renderToStaticMarkup(h(AuthorEditor, {draft:{...blankDraft(),...patch},onChange:noop,editing,anonymousEnabled,readOnly,busy:session?.busy ?? false,onSave:noop,onBack:noop,onHost:session ? noop : undefined,onJoin:session ? noop : undefined,joinUnavailableReason:session?.joinUnavailableReason}));
         }
         export function renderGame(game, host = false) {
           return renderToStaticMarkup(h(GameScreen,{game,host,guest:false,nickname:'Alex',joinUrl:'https://test.invalid/?quiz=game',busy:false,onControl:noop,onAnswer:noop,onSurveyAnswer:noop,onHome:noop,onCopyError:noop}));
@@ -58,6 +58,41 @@ beforeAll(async () => {
 }, 20000);
 
 describe('original QuizCrowd screen structure with Fabric authorization controls', () => {
+  it('keeps owner lobby controls and adds normal attendee navigation only to read-only sessions', () => {
+    for (const mode of ['quiz', 'survey'] as const) {
+      const owner = ui.renderEditor({ mode }, false, true, true, {});
+      expect(owner).toContain('Join As Attendee</button>');
+      expect(owner).toContain('Open Lobby</button>');
+      expect(owner).toContain('class="author-session-actions"');
+      expect(ui.renderEditor({ mode }, false, false, true, {})).not.toContain('Join As Attendee');
+      expect(ui.renderEditor({ mode }, false, true, true)).not.toContain('Join As Attendee');
+      for (const joinUnavailableReason of ['This session has finished.', 'This session does not allow late joins.']) {
+        const closed = ui.renderEditor({ mode }, false, true, true, { joinUnavailableReason });
+        expect(closed).toContain('disabled="" aria-describedby="attendee-join-reason"');
+        expect(closed).toContain(`id="attendee-join-reason" class="muted small attendee-join-reason">${joinUnavailableReason}`);
+        expect(closed).toContain('class="primary"><svg');
+      }
+      expect(ui.renderEditor({ mode }, false, true, true, { busy: true })).toContain('class="subtle" disabled=""');
+    }
+  });
+  it('gives all ten filled answer colors white-compatible palettes independently of podium and editor text', async () => {
+    const css = await readFile(new URL('../packages/frontend/src/global.css', import.meta.url), 'utf8');
+    expect(css).toContain('--qc-answer-fg: #ffffff;');
+    expect(css).toContain('color: var(--qc-answer-fg)');
+    expect(css).toContain('--qc-option-fg: #101426;');
+    expect(css).not.toContain('filter: brightness(1.08)');
+    expect(css).toContain('button.answer:disabled { opacity: 1;');
+    for (let index = 0; index < 10; index++) {
+      const token = css.match(new RegExp(`\\.answer-${index} \\{ background: var\\((--qc-answer-\\d)\\); \\}`))?.[1];
+      expect(token).toBeDefined();
+      const hex = css.match(new RegExp(`${token}: #([0-9a-f]{6});`))?.[1];
+      expect(hex).toBeDefined();
+      const rgb = hex!.match(/../g)!.map((channel) => Number.parseInt(channel, 16) / 255)
+        .map((channel) => channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4);
+      const luminance = .2126 * rgb[0]! + .7152 * rgb[1]! + .0722 * rgb[2]!;
+      expect(1.05 / (luminance + .05)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
   it('uses filled square/circle/triangle/square shapes with a secondary final square and an accessible brand', () => {
     const brand = ui.renderBrand();
     expect(brand).toContain('aria-label="QuizCrowd home"');

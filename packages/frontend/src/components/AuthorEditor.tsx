@@ -19,9 +19,9 @@ export function removeOption(question: Question, index: number): Question {
     ...(question.survey && !options.length ? { survey: { ...question.survey, allowMultiple: false } } : {}),
     correctIndex: correct === null || correct === index ? null : correct > index ? correct - 1 : correct };
 }
-export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy, readOnly = false, onSave, onBack, onHost, onRevokePublic }: {
+export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy, readOnly = false, onSave, onBack, onHost, onJoin, joinUnavailableReason, onRevokePublic }: {
   draft: Draft; onChange(draft: Draft): void; editing: boolean; anonymousEnabled: boolean;
-  busy: boolean; readOnly?: boolean; onSave(): void; onBack(): void; onHost?(): void; onRevokePublic?(): void;
+  busy: boolean; readOnly?: boolean; onSave(): void; onBack(): void; onHost?(): void; onJoin?(): void; joinUnavailableReason?: string; onRevokePublic?(): void;
 }) {
   const [removing, setRemoving] = useState<number>();
   const questionsRef = useRef<HTMLDivElement>(null);
@@ -58,7 +58,13 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
     onChange({ ...draft, answerDuration: timing, questions });
   }
   return <div className="author page-container">
-    <div className="section-heading page-heading"><button className="icon-button" aria-label="Go back" onClick={onBack}><Icon name="back" /></button><h1>{readOnly ? 'View' : editing ? 'Edit' : 'New'} Live {draft.mode === 'quiz' ? 'Quiz' : 'Survey'}</h1>{onHost && <button className="primary" disabled={busy} onClick={onHost}><Icon name="play" />Open Lobby</button>}</div>
+    <div className="section-heading page-heading"><button className="icon-button" aria-label="Go back" onClick={onBack}><Icon name="back" /></button><h1>{readOnly ? 'View' : editing ? 'Edit' : 'New'} Live {draft.mode === 'quiz' ? 'Quiz' : 'Survey'}</h1>
+      {(onHost || (readOnly && onJoin)) && <div className="author-session-actions">
+        {readOnly && onJoin && <button className="subtle" disabled={busy || !!joinUnavailableReason} aria-describedby={joinUnavailableReason ? 'attendee-join-reason' : undefined} onClick={onJoin}><Icon name="join" />Join As Attendee</button>}
+        {onHost && <button className="primary" disabled={busy} onClick={onHost}><Icon name="play" />Open Lobby</button>}
+      </div>}
+    </div>
+    {readOnly && onJoin && joinUnavailableReason && <p id="attendee-join-reason" className="muted small attendee-join-reason">{joinUnavailableReason}</p>}
     {readOnly && <p className="readonly-notice" role="status">Read-only: this session has started or has responses. Duplicate it to make an editable copy. Host controls remain available in the lobby.</p>}
     <form className="author-layout" onSubmit={(event) => { event.preventDefault(); if (!readOnly) onSave(); }}>
       <fieldset className="author-content" disabled={readOnly || busy}>

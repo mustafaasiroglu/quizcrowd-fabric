@@ -108,7 +108,7 @@ window.__quizcrowdFixture = {
     deferred.set(command, promise);
     this.release = (error) => { deferred.delete(command); release(error); };
   },
-  phase(next) { if (next === 'question' && phase !== 'question') questionStartedAt = Date.now() - 15000; phase = next; version++; },
+  phase(next) { if (next === 'question' && phase !== 'question') questionStartedAt = Date.now() - 15000; phase = next; version++; persist(); },
   revealMode(value) { currentDraft.showAnswer = value; },
 };
 function summary(id = activeId, record = snapshot()) {
@@ -179,6 +179,7 @@ export async function call(_connection, request, token = '', asGuest = false) {
       if (request.id !== currentCode) throw new Error('Session not found.');
       if (!authenticated && !asGuest) throw new Error('Sign in to join.');
       if (asGuest && !settings.anonymousEnabled) throw new Error('Guests are disabled.');
+      if (phase === 'finished' || (phase !== 'lobby' && !currentDraft.lateJoin)) throw new Error('This game is not accepting new attendees.');
       if (request.nickname && !players.includes(request.nickname)) players.push(request.nickname);
       return { id: activeId, token: 'test-only-attendee-credential' };
     case 'control':
