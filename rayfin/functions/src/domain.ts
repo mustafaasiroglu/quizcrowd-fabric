@@ -303,7 +303,16 @@ export function view(
     } else result.distribution = q.options.map((_, i) => answers.filter(a => a.option === i).length);
   }
   if (game.phase === 'leaderboard' || game.phase === 'finished') {
-    result.rankings = [...game.participants].sort((a, b) => b.score - a.score || a.nickname.localeCompare(b.nickname))
+    if (game.mode === 'survey') result.surveyResults = game.questions.slice(0, game.questionIndex + 1).map((question, questionIndex) => {
+      const responses = game.answers.filter(a => a.questionIndex === questionIndex).map(savedSurveyResponse);
+      const writtenCount = responses.filter(r => r.other !== undefined).length;
+      const counts = question.options.map((label, index) => ({ label, count: responses.filter(r => r.options.includes(index)).length }));
+      if (question.survey?.other && question.options.length) counts.push({ label: 'Other (written responses)', count: writtenCount });
+      const maximum = Math.max(0, ...counts.map(c => c.count));
+      return { questionIndex, text: question.text, responseCount: responses.length, writtenCount,
+        textOnly: !question.options.length, mostSelected: maximum ? counts.filter(c => c.count === maximum) : [] };
+    });
+    else result.rankings = [...game.participants].sort((a, b) => b.score - a.score || a.nickname.localeCompare(b.nickname))
       .map((p, i) => ({ nickname: p.nickname, score: p.score, streak: p.streak, rank: i + 1 }));
   }
   return result;

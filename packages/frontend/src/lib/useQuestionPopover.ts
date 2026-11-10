@@ -18,6 +18,10 @@ export function useQuestionPopover(disabled: boolean, focus: (popup: HTMLDivElem
       if (!popup.current || !trigger.current) return;
       const bounds = trigger.current.getBoundingClientRect(), height = popup.current.offsetHeight;
       popup.current.dataset.side = bounds.bottom + height + 12 > innerHeight && bounds.top > height + 12 ? 'above' : 'below';
+      popup.current.style.translate = '0px';
+      const rectangle = popup.current.getBoundingClientRect();
+      const shift = rectangle.left < 8 ? 8 - rectangle.left : Math.min(0, innerWidth - 8 - rectangle.right);
+      popup.current.style.translate = `${shift}px`;
     };
     place();
     if (popup.current) initialFocus.current(popup.current);

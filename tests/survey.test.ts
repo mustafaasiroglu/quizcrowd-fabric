@@ -37,6 +37,35 @@ describe('versioned single-field survey encoding', () => {
   });
 });
 describe('survey authoring and submission rules', () => {
+  it('projects completed-question aggregates only after reveal, with ties and no raw text or scoring', () => {
+    const { game, alice, bob } = fixture();
+    game.questions.push({ ...question, text: 'Future private question' });
+    answer(game, alice.token, null, settings, 0, { options: [0], other: 'Private Alice feedback' }, 3000);
+    expect(view(game, '', 'owner', settings, 3000, true).surveyResults).toBeUndefined();
+    answer(game, bob.token, null, settings, 0, { options: [1] }, 3100);
+    expect(view(game, alice.token, null, settings, 3100).surveyResults).toBeUndefined();
+    for (const result of [view(game, '', 'owner', settings, 7100, true), view(game, bob.token, null, settings, 7100)]) {
+      expect(result.surveyResults).toEqual([{ questionIndex: 0, text: question.text, responseCount: 2, writtenCount: 1, textOnly: false,
+        mostSelected: [{ label: 'A|B', count: 1 }, { label: 'C\\D', count: 1 }, { label: 'Other (written responses)', count: 1 }] }]);
+      expect(result.rankings).toBeUndefined();
+      expect(JSON.stringify(result)).not.toContain('Private Alice feedback');
+      expect(JSON.stringify(result)).not.toContain('Future private question');
+      expect(result.correctIndex).toBeUndefined();
+    }
+    expect(() => view(game, bob.token, null, { ...settings, anonymousEnabled: false }, 7100)).toThrow();
+    expect(() => view(game, '', 'not-owner', settings, 7100, true)).toThrow();
+  });
+  it('handles text-only and unanswered questions without ranking text or zero-count options', () => {
+    const { game, alice, bob } = fixture({ ...question, options: [], survey: { other: true, allowMultiple: false } });
+    answer(game, alice.token, null, settings, 0, { options: [], other: 'Secret one' }, 3000);
+    answer(game, bob.token, null, settings, 0, { options: [], other: 'Secret two' }, 3100);
+    const result = view(game, '', 'owner', settings, 7100, true);
+    expect(result.surveyResults?.[0]).toMatchObject({ textOnly: true, writtenCount: 2, responseCount: 2, mostSelected: [] });
+    expect(JSON.stringify(result)).not.toContain('Secret');
+    const empty = fixture();
+    view(empty.game, '', 'owner', settings, 62000, true);
+    expect(view(empty.game, '', 'owner', settings, 66000, true).surveyResults?.[0]).toMatchObject({ responseCount: 0, writtenCount: 0, mostSelected: [] });
+  });
   it('permits zero or one normal choices only with Other enabled and rejects quiz extensions', () => {
     for (const options of [[], ['A']]) {
       expect(draftSchema.safeParse({ ...draft, questions: [{ ...question, options, survey: { other: true, allowMultiple: false } }] }).success).toBe(true);

@@ -258,7 +258,8 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     }
     expect(quiz).toContain('answer-reveal-settings');
     const hint = quiz.indexOf('Select the circle beside the correct answer.');
-    expect(hint).toBeGreaterThan(quiz.indexOf('class="option-editor-grid"'));
+    if (readOnly) expect(hint).toBe(-1);
+    else expect(hint).toBeGreaterThan(quiz.indexOf('class="option-editor-grid"'));
     if (!readOnly) {
       expect(quiz).toContain('Add option</button>');
       expect(hint).toBeLessThan(quiz.indexOf('Add option</button>'));
@@ -277,8 +278,31 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(locked.match(/class="duration"/g)).toHaveLength(2);
     expect(locked).not.toContain('id="shared-duration"');
     expect(locked).toContain('Customize each question');
-    expect(locked).toContain('id="custom-duration-help" class="small muted option-help">Set seperately on each question.');
+    expect(locked).not.toContain('custom-duration-help');
     expect(locked).toContain('class="author-content" disabled=""');
+  });
+  it('places the submit action before content and settings, leaving only Add Question at the bottom', () => {
+    const create = ui.renderEditor();
+    expect(create.indexOf('class="author-submit"')).toBeLessThan(create.indexOf('class="author-content"'));
+    expect(create).toContain('Create &amp; Open Lobby');
+    expect(create.match(/type="submit"/g)).toHaveLength(1);
+    expect(create).toMatch(/class="editor-actions"><button[^>]+>[\s\S]*?Add Question<\/button><\/div>/);
+    expect(ui.renderEditor({}, false, false, true)).toContain('Save &amp; Open Lobby');
+    expect(ui.renderEditor({}, false, true, true)).not.toContain('author-submit');
+  });
+  it('shows survey aggregate summaries instead of rankings, with explicit ties, private text and empty cases', () => {
+    const surveyResults = [
+      { questionIndex: 0, text: 'Pick topics', responseCount: 2, mostSelected: [{ label: 'A', count: 1 }, { label: 'B', count: 1 }], writtenCount: 0, textOnly: false },
+      { questionIndex: 1, text: 'Written feedback', responseCount: 1, mostSelected: [], writtenCount: 1, textOnly: true },
+      { questionIndex: 2, text: 'Skipped question', responseCount: 0, mostSelected: [], writtenCount: 0, textOnly: false },
+    ];
+    for (const phase of ['leaderboard', 'finished'] as const) {
+      const html = ui.renderGame({ ...game, mode: 'survey', phase, surveyResults, rankings: [{ nickname: 'Never rank this name', score: 900, streak: 3, rank: 1 }] });
+      for (const expected of ['Most selected answers (tie)', 'Written response text is private.', 'No responses collected.', 'Pick topics', 'Written feedback', 'Skipped question']) expect(html).toContain(expected);
+      for (const forbidden of ['Never rank this name', ' pts', 'class="podium"', '📊 Leaderboard']) expect(html).not.toContain(forbidden);
+    }
+    expect(ui.renderGame({ ...game, mode: 'survey', phase: 'reveal' })).toContain('Results coming up...');
+    expect(ui.renderGame({ ...game, mode: 'survey' }, true)).toContain('Scan to join this survey');
   });
   it('adjusts selected answer indices when removing an option without changing survey nulls', () => {
     const question = { text: 'Q', options: ['A', 'B', 'C', 'D'], correctIndex: 2, duration: 20 };

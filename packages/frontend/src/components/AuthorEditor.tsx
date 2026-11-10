@@ -65,8 +65,9 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
       </div>}
     </div>
     {readOnly && onJoin && joinUnavailableReason && <p id="attendee-join-reason" className="muted small attendee-join-reason">{joinUnavailableReason}</p>}
-    {readOnly && <p className="readonly-notice" role="status">Read-only: this session has started or has responses. Duplicate it to make an editable copy. Host controls remain available in the lobby.</p>}
+    {readOnly && <p className="readonly-notice" role="status">Read-only: this session has started or has responses.</p>}
     <form className="author-layout" onSubmit={(event) => { event.preventDefault(); if (!readOnly) onSave(); }}>
+      {!readOnly && <div className="author-submit"><button type="submit" className="primary full-width" disabled={busy || (draft.visibility === 'public' && (!anonymousEnabled || !draft.publicAcknowledged))}><Icon name="save" />{busy ? 'Saving...' : editing ? 'Save & Open Lobby' : 'Create & Open Lobby'}</button></div>}
       <fieldset className="author-content" disabled={readOnly || busy}>
         <legend className="sr-only">Session content</legend>
         <section className="card title-card"><label htmlFor="quiz-title">Title</label><input id="quiz-title" placeholder={draft.mode === 'quiz' ? 'Untitled live quiz' : 'Untitled live survey'} required maxLength={MAX_TITLE_LENGTH} value={draft.title} onChange={(e) => onChange({ ...draft, title: e.target.value })} /></section>
@@ -89,10 +90,10 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
             <label className="sr-only" htmlFor={`option-${i}-${k}`}>Question {i + 1}, option {k + 1}</label><input id={`option-${i}-${k}`} placeholder={`Option ${k + 1}`} required maxLength={300} value={option} onChange={(e) => updateQuestion(i, { options: q.options.map((o, n) => n === k ? e.target.value : o) })} />
             {!readOnly && (q.options.length > 2 || (draft.mode === 'survey' && q.survey?.other)) && <button type="button" className="icon-button delete-action remove-option" aria-label={`Remove question ${i + 1} option ${k + 1}`} onClick={() => updateQuestion(i, removeOption(q, k))}><Icon name="trash" /></button>}
           </div>)}
-            {draft.mode === 'survey' && q.survey?.other && q.options.length > 0 && <div className="option-editor other-option"><span>Other <span className="small muted">(written response)</span></span>{!readOnly && <button type="button" className="icon-button delete-action" aria-label={`Remove question ${i + 1} Other`} disabled={q.options.length < 2} onClick={() => updateQuestion(i, { survey: { other: false, allowMultiple: !!q.survey?.allowMultiple } })}><Icon name="trash" /></button>}</div>}
+            {draft.mode === 'survey' && q.survey?.other && q.options.length > 0 && <div className="option-editor other-option"><span>Other <span className="small muted">(written response)</span></span>{!readOnly && <button type="button" className="icon-button delete-action remove-option" aria-label={`Remove question ${i + 1} Other`} disabled={q.options.length < 2} onClick={() => updateQuestion(i, { survey: { other: false, allowMultiple: !!q.survey?.allowMultiple } })}><Icon name="trash" /></button>}</div>}
           </div>
-          {draft.mode === 'survey' && getSurveyQuestionType(q) === 'text' && <p className="muted small">Respondents can write a free-text answer.</p>}
-          {(draft.mode === 'quiz' || (!readOnly && getSurveyQuestionType(q) !== 'text')) && <div className="question-option-footer">
+          {!readOnly && draft.mode === 'survey' && getSurveyQuestionType(q) === 'text' && <p className="muted small">Respondents can write a free-text answer.</p>}
+          {!readOnly && (draft.mode === 'quiz' || getSurveyQuestionType(q) !== 'text') && <div className="question-option-footer">
           {draft.mode === 'quiz' && <p className="muted small option-hint">Select the circle beside the correct answer.</p>}
           {!readOnly && <div className="option-actions">
             <button type="button" className="text-button" disabled={q.options.length >= MAX_OPTIONS} onClick={() => updateQuestion(i, { options: [...q.options, ''] })}><Icon name="plus" />{q.options.length >= MAX_OPTIONS ? '10 options maximum' : 'Add option'}</button>
@@ -103,9 +104,9 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
         {!readOnly && <div className="editor-actions"><button type="button" className="outline-primary" disabled={draft.questions.length >= 40} onClick={() => {
           onChange({ ...draft, answerDuration: timing, questions: [...draft.questions, blankQuestion(timing.seconds)] });
           requestAnimationFrame(() => questionsRef.current?.querySelector<HTMLTextAreaElement>('fieldset:last-child textarea')?.focus());
-        }}><Icon name="plus" />Add Question</button><button type="submit" className="primary" disabled={draft.visibility === 'public' && (!anonymousEnabled || !draft.publicAcknowledged)}><Icon name="save" />{busy ? 'Saving...' : 'Save & Open Lobby'}</button></div>}
+        }}><Icon name="plus" />Add Question</button></div>}
       </fieldset>
-      <aside className="card settings-panel" aria-labelledby="settings-heading"><h2 id="settings-heading"><Icon name="settings" />Settings</h2>
+      <div className={`author-settings ${readOnly ? 'is-readonly' : ''}`}><aside className="card settings-panel" aria-labelledby="settings-heading"><h2 id="settings-heading"><Icon name="settings" />Settings</h2>
         {onRevokePublic && <button type="button" className="subtle full-width" disabled={busy} onClick={onRevokePublic}>Revoke public access (make internal)</button>}
         <fieldset disabled={readOnly || busy}><legend className="sr-only">Session settings</legend>
           <div className="settings-group"><fieldset className="audience-settings"><legend>Who can respond?</legend>
@@ -117,8 +118,8 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
             <div className="shared-duration-choice"><label className="check"><input type="radio" name="answer-duration" value="same" checked={timing.mode === 'same'} onChange={() => setDuration('same')} />Same for all questions</label>
               {timing.mode === 'same' && <DurationInput id="shared-duration" label="Duration in seconds for all questions" value={timing.seconds} onChange={seconds => setDuration('same', seconds)} />}
             </div>
-            <label className="check custom-duration-choice"><input type="radio" name="answer-duration" value="custom" aria-describedby={timing.mode === 'custom' ? 'custom-duration-help' : undefined} checked={timing.mode === 'custom'} onChange={() => setDuration('custom')} /><span>Customize each question</span></label>
-            {timing.mode === 'custom' && <p id="custom-duration-help" className="small muted option-help">Set seperately on each question.</p>}
+            <label className="check custom-duration-choice"><input type="radio" name="answer-duration" value="custom" aria-describedby={!readOnly && timing.mode === 'custom' ? 'custom-duration-help' : undefined} checked={timing.mode === 'custom'} onChange={() => setDuration('custom')} /><span>Customize each question</span></label>
+            {!readOnly && timing.mode === 'custom' && <p id="custom-duration-help" className="small muted option-help">Set seperately on each question.</p>}
           </fieldset></div>
           <div className="settings-group"><fieldset className="late-join-settings"><legend>Allow late joins?</legend>
             <label className="check"><input type="radio" name="late-join" value="deny" checked={!draft.lateJoin} onChange={() => onChange({ ...draft, lateJoin: false })} />Don&apos;t allow late join</label>
@@ -131,7 +132,7 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
           </fieldset>
           </div>}
         </fieldset>
-      </aside>
+      </aside></div>
     </form>
     {removing !== undefined && !readOnly && <Modal title={`Delete Question ${removing + 1}?`} onClose={() => setRemoving(undefined)}><p className="muted">This action cannot be undone.</p><div className="actions equal-actions"><button onClick={() => setRemoving(undefined)}>Cancel</button><button className="delete-action" onClick={() => { onChange({ ...draft, answerDuration: timing, questions: draft.questions.filter((_, i) => i !== removing) }); setRemoving(undefined); }}>Delete</button></div></Modal>}
   </div>;

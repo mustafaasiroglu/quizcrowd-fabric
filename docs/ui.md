@@ -45,10 +45,10 @@ DOM changes into the platform page.
 | Join | Narrow card, six-digit numeric string code including leading zeros, separate nickname step; old links resolve; no pre-join preview action |
 | Author | Wide title/questions column with white Light surfaces or dark indigo surfaces; compact question cards, correctness controls, options and reordering |
 | Settings | Right sidebar on desktop, after the question/content column on narrow layouts in both visual and DOM/tab order; Who can respond? first, then answer duration, late joins and Quiz-only answer reveal; no Content Type label/control |
-| Host lobby | 448px card, Waiting for Users, code/link/QR, attendee chips/count, Start Quiz or Start Survey; footer shows the title only |
-| Attendee | Waiting card, full-width timer, colored answer choices, submitted-answer state and server-projected reveal |
+| Host lobby | Ordinary compact 448px card retained; optional Present lobby enlarges the title/code/QR with join guidance, attendee count and guarded Start; Exit presentation restores compact view |
+| Attendee | Waiting card, full-width timer (sticky while scrolling on mobile), colored answer choices, submitted-answer state and server-projected reveal; long answer text switches the grid to one column |
 | Host question/results | Centered question card, colored options, timer/answer count, reveal, leaderboard and next/final controls |
-| Finish | Three-step podium in second / first / third order, remaining rankings and replay/home action |
+| Finish | Quiz keeps its podium/rankings; Survey shows per-question aggregate summaries and Back to Home, never a score/podium |
 | Recent cards | Compact keyboard-accessible clickable content, no thumbnail or visible Open/View hint, type/title/sentence-case status/date icon/Questions/Responses; separate native three-dot Open / Duplicate / Delete disclosure |
 | Publisher | Trusted administrator-only guest setting at `/admin/`; no header shortcut or bootstrap-identity diagnostic |
 
@@ -60,6 +60,32 @@ card geometry and mobile option stacking. Home/editor use purple and pink
 accents with Segoe UI typography. Their status badges, authoring correctness
 selection and controls use no green; the game correctness semantics stay unchanged.
 Reduced-motion preferences disable animations and transitions.
+Decorative shape travel is slowed from 14s to 28s, with peak opacity reduced
+from .6 to .25; the background gradient cycle is 30s instead of 15s.
+The answer colors themselves are unchanged by this animation adjustment.
+
+The single **Create & Open Lobby** / **Save & Open Lobby** submit action is
+sticky above Settings on desktop and at the top of the form on narrow screens.
+Questions still precede Settings in DOM/tab and visual order; only **Add Question**
+remains below them. Native form validation, busy/public acknowledgement guards
+and readonly locks still apply. Readonly views omit editing hints.
+Question type/custom duration triggers have a subtle neutral fill and no border.
+Normal and Other option delete controls both use 32px targets with 16px glyphs.
+
+Mobile timer bars have an opaque theme surface, safe-area padding and focus
+scroll clearance; scrolling choices does not hide remaining time. More than
+100 characters or a newline in any answer switches that answer group to one
+column, without truncating text (mobile already stacks ordinary answers).
+
+Survey reveal says **Results coming up...**. The subsequent results phase and
+finish show the most-selected response buckets for each completed question,
+including ties, unanswered questions and text-only response counts. Other
+responses are an explicitly grouped bucket; their text is never ranked or shown.
+The server emits this projection only in the existing post-reveal results/final
+phases, after the usual owner or attendee capability/audience/expiry/epoch checks.
+Future-question text, raw response text, participant associations and survey
+scores/rankings are not part of this new projection. Current-question reveal
+distributions and all Quiz scoring/reveal rules remain unchanged.
 All settings glyphs use the shared 24-unit outline SVG: a symmetric eight-tooth
 gear and independently centered ring, with the same current-color stroke,
 rounded joins and nonshrinking icon sizing as the other controls. It replaces

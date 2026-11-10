@@ -4,7 +4,7 @@ import { copyTitle } from '@rayfin-app/shared';
 const parameters = new URLSearchParams(location.search);
 const previous = JSON.parse(sessionStorage.getItem('quizcrowd-test-fixture') ?? 'null');
 const requestedExample = parameters.get('example');
-const example = ['survey-multiple', 'survey-single', 'survey-other-only', 'survey-legacy-single-other', 'quiz-ten', 'survey-ten'].includes(requestedExample) ? requestedExample : previous?.example;
+const example = ['survey-multiple', 'survey-single', 'survey-other-only', 'survey-legacy-single-other', 'quiz-ten', 'survey-ten', 'survey-results'].includes(requestedExample) ? requestedExample : previous?.example;
 const stored = requestedExample && example !== previous?.example ? null : previous;
 let authenticated = stored?.authenticated ?? parameters.get('fixture') !== 'signed-out';
 const admin = stored?.admin ?? parameters.get('fixture') !== 'creator';
@@ -33,9 +33,19 @@ let questionStartedAt = 0;
 let questionIndex = 0;
 let myOption;
 let myResponse;
+let surveyAnswers = {};
 let version = 1;
 const players = ['Alex', 'Sam', 'Taylor', 'Jordan'];
-if (!stored && example?.endsWith('-ten')) {
+if (!stored && example === 'survey-results') {
+  currentCode = '600123';
+  currentDraft = { ...draft, title: 'Survey results demo', mode: 'survey', lateJoin: true, questions: [
+    { text: 'Which topics should we include?', options: ['Product sessions', 'Workshops'], correctIndex: null, duration: 120, survey: { other: true, allowMultiple: true } },
+    { text: 'Share your feedback', options: [], correctIndex: null, duration: 120, survey: { other: true, allowMultiple: false } },
+    { text: 'Which time works best?', options: ['Morning', 'Afternoon'], correctIndex: null, duration: 120 },
+  ] };
+  surveyAnswers = { 0: { options: [0,1] }, 1: { options: [], other: 'Private fixture text - never render in summaries' } };
+  phase = 'finished'; questionIndex = 2;
+} else if (!stored && example?.endsWith('-ten')) {
   currentCode = '600123'; // Fixed checksum-valid test invitation, not the production random generator.
   const survey = example === 'survey-ten';
   currentDraft = { ...draft, title: survey ? 'Ten-choice Survey demo' : 'Ten-choice Quiz demo', mode: survey ? 'survey' : 'quiz',
@@ -53,16 +63,18 @@ if (!stored && example?.endsWith('-ten')) {
 if (stored) {
   currentDraft = stored.currentDraft; deleted = stored.deleted; currentCode = stored.currentCode;
   phase = stored.phase; questionIndex = stored.questionIndex; myOption = stored.myOption; myResponse = stored.myResponse; version = stored.version;
+  surveyAnswers = stored.surveyAnswers ?? {};
   players.splice(0, players.length, ...stored.players);
 }
 questionStartedAt = stored?.questionStartedAt ?? (phase === 'question' ? Date.now() - 15000 : 0);
 function snapshot() {
-  return structuredClone({ currentDraft, deleted, currentCode, createdAt, phase, questionStartedAt, questionIndex, myOption, myResponse, version, players });
+  return structuredClone({ currentDraft, deleted, currentCode, createdAt, phase, questionStartedAt, questionIndex, myOption, myResponse, surveyAnswers, version, players });
 }
 function activate(id, record) {
   activeId = id;
   ({ currentDraft, deleted, currentCode, createdAt, phase, questionIndex, myOption, myResponse, version } = structuredClone(record));
   questionStartedAt = record.questionStartedAt ?? (phase === 'question' ? Date.now() - 15000 : 0);
+  surveyAnswers = structuredClone(record.surveyAnswers ?? {});
   players.splice(0, players.length, ...record.players);
 }
 function persist() {
@@ -97,7 +109,15 @@ function view(attendee) {
     } : {}),
     ...(phase === 'reveal' ? { distribution: q.options.map((_, i) => currentDraft.mode === 'survey' ? Number(myResponse?.options.includes(i) ?? myOption === i) : i === 0 ? 3 : 1),
       ...(q.survey?.other ? { otherCount: myResponse?.other === undefined ? 0 : 1 } : {}) } : {}),
-    ...(phase === 'leaderboard' || phase === 'finished' ? { rankings: currentDraft.mode === 'quiz' ? rankings : rankings.map((r) => ({ ...r, score: 0, streak: 0 })) } : {}),
+    ...(phase === 'leaderboard' || phase === 'finished' ? currentDraft.mode === 'quiz' ? { rankings } : {
+      surveyResults: currentDraft.questions.slice(0,questionIndex+1).map((question,index)=>{
+        const response=surveyAnswers[index], writtenCount=Number(response?.other!==undefined);
+        const counts=question.options.map((label,i)=>({label,count:Number(response?.options.includes(i)??false)}));
+        if(question.survey?.other&&question.options.length)counts.push({label:'Other (written responses)',count:writtenCount});
+        const maximum=Math.max(0,...counts.map(c=>c.count));
+        return {questionIndex:index,text:question.text,responseCount:Number(!!response),writtenCount,textOnly:!question.options.length,mostSelected:maximum?counts.filter(c=>c.count===maximum):[]};
+      }),
+    } : {}),
   };
 }
 window.__quizcrowdFixture = {
@@ -160,14 +180,14 @@ export async function call(_connection, request, token = '', asGuest = false) {
       const code = nextDemoCode(); // Predictable test-only suffix; production uses Node crypto.randomInt.
       currentDraft = { ...structuredClone(currentDraft), title: copyTitle(currentDraft.title), visibility: 'internal', publicAcknowledged: false };
       activeId = crypto.randomUUID(); currentCode = code; createdAt = Date.now();
-      phase = 'lobby'; questionStartedAt = 0; questionIndex = -1; version = 0; myOption = undefined; myResponse = undefined; deleted = false;
+      phase = 'lobby'; questionStartedAt = 0; questionIndex = -1; version = 0; myOption = undefined; myResponse = undefined; surveyAnswers = {}; deleted = false;
       players.splice(0);
       return { id: activeId, code: currentCode };
     }
     case 'create':
       if (!authenticated) throw new Error('Sign in to create.');
       currentCode = nextDemoCode();
-      currentDraft = structuredClone(request.draft); phase = 'lobby'; questionStartedAt = 0; questionIndex = 0; myOption = undefined; myResponse = undefined; deleted = false;
+      currentDraft = structuredClone(request.draft); phase = 'lobby'; questionStartedAt = 0; questionIndex = 0; myOption = undefined; myResponse = undefined; surveyAnswers = {}; deleted = false;
       return { id: activeId, code: currentCode };
     case 'host':
       if (!authenticated) throw new Error('Host ownership required.');
@@ -193,6 +213,7 @@ export async function call(_connection, request, token = '', asGuest = false) {
       if (!token || phase !== 'question') throw new Error('Answer rejected.');
       myOption = request.option;
       myResponse = request.response ? structuredClone(request.response) : undefined;
+      if(currentDraft.mode==='survey')surveyAnswers[questionIndex]=myResponse??{options:[myOption]};
       return { accepted: true };
     case 'configure':
       if (!authenticated || !admin) throw new Error('Administrator required.');

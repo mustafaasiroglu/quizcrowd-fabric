@@ -2,6 +2,8 @@ import { useId, useState } from 'react';
 import type { PublicQuestion, SurveyResponse } from '@rayfin-app/shared';
 import { MAX_SURVEY_TEXT_LENGTH } from '@rayfin-app/shared';
 
+export const hasLongOptions = (options: string[]): boolean => options.some(option => option.length > 100 || option.includes('\n'));
+
 export function SurveyAnswers({ question, disabled, onSubmit }: {
   question: PublicQuestion; disabled: boolean; onSubmit(response: SurveyResponse): void;
 }) {
@@ -22,7 +24,7 @@ export function SurveyAnswers({ question, disabled, onSubmit }: {
   }}>
     <fieldset disabled={disabled}>
       <legend className={onlyOther ? 'sr-only' : 'muted small'}>{onlyOther ? 'Your response' : multiple ? 'Choose all that apply' : 'Choose one response'}</legend>
-      {!onlyOther && <div className="answers survey-choices">{question.options.map((option, index) => <label className={`answer answer-${index} survey-choice`} key={index}>
+      {!onlyOther && <div className={`answers survey-choices${hasLongOptions(question.options) ? ' long-options' : ''}`}>{question.options.map((option, index) => <label className={`answer answer-${index} survey-choice`} key={index}>
         <input type={multiple ? 'checkbox' : 'radio'} name={`${id}-choice`} checked={options.includes(index)} onChange={() => choose(index)} /><span>{option}</span>
       </label>)}
         {question.survey?.other && <label className="answer survey-choice other-choice"><input type={multiple ? 'checkbox' : 'radio'} name={`${id}-choice`} checked={other} onChange={() => {

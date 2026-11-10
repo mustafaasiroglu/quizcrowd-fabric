@@ -1,11 +1,25 @@
 import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import type { GameView, SurveyResponse } from '@rayfin-app/shared';
+import type { GameView, SurveyQuestionResult, SurveyResponse } from '@rayfin-app/shared';
 import { Icon } from './Icon';
-import { SurveyAnswers } from './SurveyAnswers';
+import { hasLongOptions, SurveyAnswers } from './SurveyAnswers';
 import { useQuestionCountdown } from '../lib/useQuestionCountdown';
 
 type Ranking = NonNullable<GameView['rankings']>[number];
+function SurveyResults({ results }: { results: SurveyQuestionResult[] }) {
+  return <div className="survey-results" aria-label="Survey question summaries">
+    {results.map(result => <section key={result.questionIndex} className="survey-result">
+      <h2>Question {result.questionIndex + 1}</h2><p>{result.text}</p>
+      <p className="muted small">{result.responseCount} response{result.responseCount !== 1 ? 's' : ''}</p>
+      {!result.responseCount ? <p className="muted">No responses collected.</p> : result.textOnly
+        ? <p className="muted">{result.writtenCount} written response{result.writtenCount !== 1 ? 's' : ''} collected. Written response text is private.</p>
+        : <><h3>{result.mostSelected.length > 1 ? 'Most selected answers (tie)' : 'Most selected answer'}</h3>
+          <ul className="distribution">{result.mostSelected.map((answer, index) => <li key={index}><span>{answer.label}</span><strong>{answer.count} response{answer.count !== 1 ? 's' : ''}</strong></li>)}</ul>
+          {result.writtenCount > 0 && <p className="muted small">Written responses are grouped; their text is not shown.</p>}
+        </>}
+    </section>)}
+  </div>;
+}
 export function Podium({ rankings }: { rankings: Ranking[] }) {
   return <div className="podium" aria-label="Top three players">
     {[2, 1, 3].map((rank) => {
@@ -23,6 +37,8 @@ export function GameScreen({ game, host, nickname, joinUrl, busy, onControl, onA
 }) {
   const { seconds, fill } = useQuestionCountdown(game);
   const [copied, setCopied] = useState('');
+  const [presenting, setPresenting] = useState(false);
+  useEffect(() => setPresenting(false), [game.id, game.phase]);
   useEffect(() => {
     if (!copied) return;
     const timer = setTimeout(() => setCopied(''), 2000);
@@ -44,13 +60,16 @@ export function GameScreen({ game, host, nickname, joinUrl, busy, onControl, onA
     </li>)}</ol>;
   }
   return <div className={`game-stage stage-${game.phase} ${host ? 'host-stage' : 'attendee-stage'}`} data-phase={game.phase}>
-    {game.phase === 'lobby' ? <section className={`card lobby ${host ? 'host-lobby' : 'attendee-lobby'}`}>
+    {game.phase === 'lobby' ? <section className={`card lobby ${host ? 'host-lobby' : 'attendee-lobby'} ${host && presenting ? 'present-lobby' : ''}`}>
       {host ? <>
-        <h1>Waiting for Users</h1><p className="muted">Share this code with attendees</p>
+        <div className="lobby-toolbar"><button className="subtle" aria-pressed={presenting} onClick={() => setPresenting(value => !value)}>{presenting ? 'Exit presentation' : 'Present lobby'}</button></div>
+        <h1>{presenting ? game.title : 'Waiting for Users'}</h1><p className="muted">{presenting ? 'Open the invite link or scan the QR code, then enter your nickname.' : 'Share this code with attendees'}</p>
+        <div className="lobby-invitation">
         <div className="code-panel"><div className="session-code"><strong>{game.code}</strong><button className="icon-button" aria-label="Copy session code" onClick={() => void copy(game.code)}><Icon name={copied === game.code ? 'check' : 'copy'} /></button></div>
           <div className="join-link"><a href={joinUrl}>{joinUrl}</a><button className="icon-button" aria-label="Copy invite link" onClick={() => void copy(joinUrl)}><Icon name={copied === joinUrl ? 'check' : 'copy'} /></button></div>
         </div>
-        <div className="qr-container"><QRCodeSVG value={joinUrl} size={150} title="Scan to join this quiz" /></div>
+        <div className="qr-container"><QRCodeSVG value={joinUrl} size={presenting ? 224 : 150} title={`Scan to join this ${game.mode}`} /></div>
+        </div>
         {copied && <span role="status" className="sr-only">Copied to clipboard.</span>}
         <p className="muted small">{game.players.length} attendee{game.players.length !== 1 ? 's' : ''} joined</p>
         <div className="players">{game.players.map((player, index) => <span key={index}>{player}</span>)}</div>
@@ -61,7 +80,7 @@ export function GameScreen({ game, host, nickname, joinUrl, busy, onControl, onA
         <p className="muted">Waiting for host to start...</p><div className="loading-spinner" role="status" aria-label="Waiting for host" />
         <div className="players">{game.players.map((player, index) => <span key={index} className={player === nickname ? 'is-me' : ''}>{player}</span>)}</div>
       </>}
-      <p className="game-context muted small">{game.title}</p>
+      {!presenting && <p className="game-context muted small">{game.title}</p>}
     </section> : game.phase === 'question' && question ? <>
       <section className={host ? 'card question-screen' : 'attendee-question'}>
         <div className="timer" role="timer" aria-label={`${seconds} seconds remaining`}>
@@ -70,7 +89,7 @@ export function GameScreen({ game, host, nickname, joinUrl, busy, onControl, onA
         </div>
         <div className="question-text"><p className="muted small">{questionLabel}</p><h1>{question.text}</h1></div>
         {!host && !answered && game.mode === 'survey' ? <SurveyAnswers key={`${game.id}-${game.questionIndex}`} question={question} disabled={busy || seconds === 0} onSubmit={onSurveyAnswer} />
-          : host || !answered ? <div className={`answers ${question.options.length <= 2 && !host ? 'two-options' : ''}`}>{question.options.map((option, i) => host
+          : host || !answered ? <div className={`answers ${question.options.length <= 2 && !host ? 'two-options' : ''} ${hasLongOptions(question.options) ? 'long-options' : ''}`}>{question.options.map((option, i) => host
           ? <div className={`answer answer-${i}`} key={i}>{option}</div>
           : <button className={`answer answer-${i}`} key={i} disabled={busy || seconds === 0} onClick={() => onAnswer(i)}>{option}</button>)}
           {host && question.survey?.other && <div className="answer other-choice">{question.options.length ? 'Other (written response)' : 'Written response'}</div>}</div>
@@ -84,20 +103,20 @@ export function GameScreen({ game, host, nickname, joinUrl, busy, onControl, onA
       </section>
     </> : game.phase === 'reveal' ? <section className={`card reveal-screen ${host ? 'wide-result' : ''}`}>
       <p className="muted small">{question?.text}</p>
-      {!host && <div className={`result-symbol ${game.myResult?.correct ? 'success' : 'danger-text'}`} aria-hidden="true">{game.myResult ? game.myResult.correct ? '✓' : '✗' : '—'}</div>}
+      {!host && game.mode === 'quiz' && <div className={`result-symbol ${game.myResult?.correct ? 'success' : 'danger-text'}`} aria-hidden="true">{game.myResult ? game.myResult.correct ? '✓' : '✗' : '—'}</div>}
       <h1>{correct !== undefined ? 'Correct Answer' : game.mode === 'survey' ? 'Responses are in!' : 'Results are in!'}</h1>
       {correct !== undefined && <div className="correct-answer"><strong>{correct}</strong></div>}
       {!host && game.myResult && <div><p className={`result-points ${game.myResult.correct ? 'success' : 'danger-text'}`}>{game.myResult.correct ? `+${game.myResult.points} pts` : 'Not quite!'}</p><p className="muted small">Total: {game.myResult.score} pts</p></div>}
       {game.distribution && question && <ul className="distribution" aria-label="Response distribution">{question.options.map((option, i) => <li key={i}><span>{option}</span><strong>{game.distribution![i]} responses</strong></li>)}{game.otherCount !== undefined && <li><span>{question.options.length ? 'Other' : 'Written responses'}</span><strong>{game.otherCount} responses</strong></li>}</ul>}
-      <p className="muted small">Leaderboard coming up...</p>
+      <p className="muted small">{game.mode === 'survey' ? 'Results coming up...' : 'Leaderboard coming up...'}</p>
     </section> : game.phase === 'leaderboard' ? <section className={`card leaderboard ${host ? 'wide-result' : ''}`}>
-      <h1>{last && host ? '🏁 Final Standings' : '📊 Leaderboard'}</h1>
-      {leaderboard(rankings)}
+      <h1>{game.mode === 'survey' ? 'Survey Results' : last && host ? '🏁 Final Standings' : '📊 Leaderboard'}</h1>
+      {game.mode === 'survey' ? <SurveyResults results={game.surveyResults ?? []} /> : leaderboard(rankings)}
       {host ? <button className="primary full-width large-button" disabled={busy} onClick={onControl}>{last ? 'See Final Results →' : 'Next Question →'}</button> : <p className="muted small">Waiting for next question...</p>}
     </section> : game.phase === 'finished' ? <section className="card finished-screen">
-      <h1>🏆 {game.mode === 'survey' ? 'Survey Complete!' : 'Game Over!'}</h1>
-      {game.mode === 'quiz' ? <><Podium rankings={rankings} />{leaderboard(rankings.slice(3))}</> : <><p className="muted">Thank you for sharing your responses.</p>{leaderboard(rankings)}</>}
-      <button className="primary full-width" onClick={onHome}>{host ? 'Back to Home' : 'Play Again'}</button>
+      <h1>{game.mode === 'survey' ? 'Survey Complete!' : '🏆 Game Over!'}</h1>
+      {game.mode === 'quiz' ? <><Podium rankings={rankings} />{leaderboard(rankings.slice(3))}</> : <><p className="muted">Thank you for sharing your responses.</p><SurveyResults results={game.surveyResults ?? []} /></>}
+      <button className="primary full-width" onClick={onHome}>{host || game.mode === 'survey' ? 'Back to Home' : 'Play Again'}</button>
     </section> : <p role="status">Waiting for session state...</p>}
   </div>;
 }

@@ -118,6 +118,15 @@ export interface GameView {
   distribution?: number[];
   otherCount?: number;
   rankings?: { nickname: string; score: number; streak: number; rank: number }[];
+  surveyResults?: SurveyQuestionResult[];
+}
+export interface SurveyQuestionResult {
+  questionIndex: number;
+  text: string;
+  responseCount: number;
+  mostSelected: { label: string; count: number }[];
+  writtenCount: number;
+  textOnly: boolean;
 }
 export interface QuizSummary {
   id: string;
