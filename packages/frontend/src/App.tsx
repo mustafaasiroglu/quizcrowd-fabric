@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AuthorView, Draft, GameView, QuizSummary, SettingsView } from '@rayfin-app/shared';
+import type { AnswerSubmission, AuthorView, Draft, GameView, QuizSummary, SettingsView } from '@rayfin-app/shared';
 import type { OpaqueSession } from '@microsoft/rayfin-auth';
 import { call, connect, type Connection } from './lib/rayfin-client';
 import { AuthorEditor, blankDraft } from './components/AuthorEditor';
@@ -224,6 +224,13 @@ export default function App() {
   }
   function openDraft(id: string) { navigate({ page: 'author', id, mode: 'quiz' }); }
   function host(id: string) { setTicket(undefined); navigate({ page: 'game', id, host: true, lobby: true }); }
+  async function submitAnswer(selection: AnswerSubmission, current: () => boolean) {
+    if (!connection || !game || !ticket) throw new Error('Join this session before answering.');
+    await call(connection, { command: 'answer', id: game.id, questionIndex: game.questionIndex, ...selection }, ticket.token, ticket.guest);
+    if (!current()) return;
+    const next = await call<GameView>(connection, { command: 'state', id: game.id }, ticket.token, ticket.guest);
+    if (current()) setGame(next);
+  }
   const joinUrl = game ? `${location.origin}${routeUrl({ page: 'join', invitation: game.code })}` : '';
   const seconds = game?.question && game.questionStartedAt
     ? Math.max(0, Math.ceil((game.questionStartedAt + game.question.duration * 1000 - clock - skew.current) / 1000)) : 0;
@@ -307,12 +314,8 @@ export default function App() {
           setGame(next);
           if (route.host && route.lobby !== (next.phase === 'lobby')) navigate({ ...route, lobby: next.phase === 'lobby' }, true);
         }
-      })} onAnswer={(option) => void run(async (current) => {
-        await call(connection!, { command: 'answer', id: game.id, questionIndex: game.questionIndex, option }, ticket!.token, ticket!.guest);
-        if (!current()) return;
-        const next = await call<GameView>(connection!, { command: 'state', id: game.id }, ticket!.token, ticket!.guest);
-        if (current()) setGame(next);
-      })} />)}
+      })} onAnswer={(option) => void run(current => submitAnswer({ option }, current))}
+        onSurveyAnswer={(response) => void run(current => submitAnswer({ response }, current))} />)}
       {page === 'not-found' && <section className="card"><h1>Page not found</h1><p>The link is invalid or this page does not exist.</p><button className="primary" onClick={home}>Back to Home</button></section>}
     </main>
     <footer>QuizCrowd for Microsoft Fabric</footer>

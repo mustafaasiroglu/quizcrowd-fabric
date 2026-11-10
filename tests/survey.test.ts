@@ -1,0 +1,121 @@
+import { describe, expect, it } from 'vitest';
+import { decodeSurveyResponse, encodeSurveyResponse, MAX_SURVEY_ANSWER_LENGTH, MAX_SURVEY_TEXT_LENGTH } from '../packages/shared/src/index';
+import type { Question, SurveyResponse } from '../packages/shared/src/index';
+import { answer, control, createGame, draftSchema, join, preview, surveyResponse, view } from '../rayfin/functions/src/domain';
+
+const settings = { anonymousEnabled: true, guestEpoch: 7 };
+const question: Question = { text: 'Your feedback?', options: ['A|B', 'C\\D', 'Third'], correctIndex: null, duration: 60, survey: { other: true, allowMultiple: true } };
+const draft = { title: 'Feedback', mode: 'survey', visibility: 'public', publicAcknowledged: true, lateJoin: false, showAnswer: 'wait_all', questions: [question] };
+function fixture(q: Question = question) {
+  const game = createGame({ ...draft, questions: [q] }, 'owner', settings, 1000);
+  const alice = join(game, 'Alice', null, settings, 1000);
+  const bob = join(game, 'Bob', null, settings, 1000);
+  control(game, 'start', game.version, 'owner', 2000);
+  return { game, alice, bob };
+}
+describe('versioned single-field survey encoding', () => {
+  it.each(['Plain text', 'literal | pipe', 'literal \\ backslash', '\\|o:5|t:injection\\', 'line one\nline two', '|'.repeat(500)])('roundtrips escaped text %j', other => {
+    const response = { options: [0, 2], other };
+    const encoded = encodeSurveyResponse(response);
+    expect(encoded.startsWith('o:0|o:2|t:')).toBe(true);
+    expect(encoded.length).toBeLessThanOrEqual(MAX_SURVEY_ANSWER_LENGTH);
+    expect(decodeSurveyResponse(encoded)).toEqual(response);
+  });
+  it('uses explicit metadata rather than guessing a legacy answer format', () => {
+    const { game, alice } = fixture();
+    const response = { options: [2, 0], other: '  A|B\\C  ' };
+    answer(game, alice.token, null, settings, 0, response, 3000);
+    const saved = JSON.parse(JSON.stringify(game));
+    expect(saved.answers[0]).toMatchObject({ option: 'o:0|o:2|t:A\\|B\\\\C', format: 'survey-v1', correct: false, points: 0 });
+    expect(saved.answers[0].option).not.toContain('Third');
+    expect(view(saved, alice.token, null, settings, 3000).myResponse).toEqual({ options: [0, 2], other: 'A|B\\C' });
+    saved.answers[0].format = 'future-unknown-format';
+    expect(() => view(saved, alice.token, null, settings, 3000)).toThrow('Unsupported persisted');
+  });
+  it.each(['', 'o:0|o:0', 'o:6', 't:', 't:x|o:0', 't:x|t:y', 't:x\\', 't:x\\q', 'unversioned text', 't:' + 'x'.repeat(501)])('fails explicitly on malformed stored encoding %j', encoded => {
+    expect(() => decodeSurveyResponse(encoded)).toThrow();
+  });
+});
+describe('survey authoring and submission rules', () => {
+  it('permits zero or one normal choices only with Other enabled and rejects quiz extensions', () => {
+    for (const options of [[], ['A']]) {
+      expect(draftSchema.safeParse({ ...draft, questions: [{ ...question, options, survey: { other: true, allowMultiple: false } }] }).success).toBe(true);
+      expect(draftSchema.safeParse({ ...draft, questions: [{ ...question, options, survey: { other: false, allowMultiple: false } }] }).success).toBe(false);
+    }
+    expect(draftSchema.safeParse({ ...draft, questions: [{ ...question, options: [] }] }).success).toBe(false);
+    expect(draftSchema.safeParse({ ...draft, mode: 'quiz', questions: [{ ...question, correctIndex: 0 }] }).success).toBe(false);
+    expect(draftSchema.safeParse({ ...draft, questions: [{ ...question, survey: { other: true, allowMultiple: true, unexpected: true } }] }).success).toBe(false);
+  });
+  it('supports Other-only answers without requiring a fake normal option', () => {
+    const q = { ...question, options: [], survey: { other: true, allowMultiple: false } };
+    const { game, alice, bob } = fixture(q);
+    answer(game, alice.token, null, settings, 0, { options: [], other: '  Feedback | thanks\\  ' }, 3000);
+    expect(view(game, alice.token, null, settings, 3000).myResponse).toEqual({ options: [], other: 'Feedback | thanks\\' });
+    answer(game, bob.token, null, settings, 0, { options: [], other: 'Second response' }, 3100);
+    expect(view(game, '', 'owner', settings, 3100, true)).toMatchObject({ distribution: [], otherCount: 2 });
+  });
+  it.each([
+    { options: [] }, { options: [0, 0] }, { options: [-1] }, { options: [3] }, { options: [0.5] },
+    { options: ['0'] }, { options: [0], other: '' }, { options: [], other: '   ' },
+    { options: [], other: 'x'.repeat(501) }, { options: [], other: 'x\u0000y' },
+    { options: [0], unexpected: 'text' }, { options: [0], otherSelected: false, other: 'Stale text' },
+  ])('rejects invalid input %j', input => {
+    expect(() => surveyResponse(question, input)).toThrow();
+  });
+  it('limits text to 500 UTF-16 code units and rejects Other when disabled or multiple when off', () => {
+    expect(surveyResponse(question, { options: [], other: 'x'.repeat(MAX_SURVEY_TEXT_LENGTH) }).other).toHaveLength(500);
+    const single = { ...question, survey: { other: true, allowMultiple: false } };
+    for (const response of [{ options: [0, 1] }, { options: [0], other: 'Text' }]) expect(() => surveyResponse(single, response)).toThrow();
+    expect(() => surveyResponse({ ...question, survey: { other: false, allowMultiple: true } }, { options: [], other: 'Text' })).toThrow();
+    expect(() => surveyResponse({ ...question, survey: undefined }, { options: [0, 1] })).toThrow();
+  });
+  it('canonicalizes selection order and text for idempotent retries without changing awards', () => {
+    const { game, alice } = fixture();
+    answer(game, alice.token, null, settings, 0, { options: [2, 0], other: ' Answer ' }, 3000);
+    answer(game, alice.token, null, settings, 0, { options: [0, 2], other: 'Answer' }, 3001);
+    expect(game.answers).toHaveLength(1);
+    expect(game.participants[0]).toMatchObject({ score: 0, streak: 0 });
+    expect(() => answer(game, alice.token, null, settings, 0, { options: [0], other: 'Changed' }, 3002)).toThrow('cannot be changed');
+  });
+  it('preserves legacy numeric single answers, including retries, distributions and no scoring', () => {
+    const { game, alice, bob } = fixture({ ...question, survey: undefined });
+    game.answers.push({ participantId: game.participants[0].id, questionIndex: 0, option: 1, correct: false, points: 0 });
+    answer(game, alice.token, null, settings, 0, { options: [1] }, 3000);
+    expect(game.answers[0].option).toBe(1);
+    expect(game.answers[0].format).toBeUndefined();
+    answer(game, bob.token, null, settings, 0, 0, 3000);
+    expect(view(game, alice.token, null, settings, 3000)).toMatchObject({ myOption: 1, myResponse: { options: [1] }, distribution: [1, 1, 0] });
+  });
+  it('returns only own free text and aggregate counts, before and after reveal', () => {
+    const { game, alice, bob } = fixture();
+    answer(game, alice.token, null, settings, 0, { options: [0, 2], other: 'Private Alice feedback' }, 3000);
+    const waiting = view(game, bob.token, null, settings, 3000);
+    expect(waiting.myResponse).toBeUndefined(); expect(waiting.distribution).toBeUndefined(); expect(waiting.otherCount).toBeUndefined();
+    expect(JSON.stringify(view(game, '', 'owner', settings, 3000, true))).not.toContain('Private Alice feedback');
+    answer(game, bob.token, null, settings, 0, { options: [2] }, 3100);
+    const host = view(game, '', 'owner', settings, 3100, true);
+    expect(host).toMatchObject({ answerCount: 2, distribution: [1, 0, 2], otherCount: 1 });
+    for (const projection of [host, view(game, bob.token, null, settings, 3100), preview(game, null, settings)]) {
+      expect(JSON.stringify(projection)).not.toContain('Private Alice feedback');
+      expect(JSON.stringify(projection)).not.toContain('survey-v1');
+      expect(JSON.stringify(projection)).not.toContain('participantId');
+    }
+    expect(host.correctIndex).toBeUndefined(); expect(host.myResult).toBeUndefined();
+  });
+  it('keeps guest config/epoch, closed-question and quiz scoring boundaries', () => {
+    const { game, alice } = fixture();
+    const response: SurveyResponse = { options: [], other: 'Text' };
+    for (const revoked of [{ ...settings, anonymousEnabled: false }, { ...settings, guestEpoch: 8 }]) {
+      expect(() => answer(game, alice.token, null, revoked, 0, response, 3000)).toThrow();
+    }
+    expect(() => answer(game, alice.token, null, settings, 0, response, 62000)).toThrow('closed');
+    const quiz = createGame({ ...draft, mode: 'quiz', questions: [{ ...question, survey: undefined, correctIndex: 0 }] }, 'owner', settings, 1000);
+    const attendee = join(quiz, 'Quiz attendee', null, settings, 1000);
+    control(quiz, 'start', quiz.version, 'owner', 2000);
+    expect(() => answer(quiz, attendee.token, null, settings, 0, { options: [0] }, 3000)).toThrow();
+    answer(quiz, attendee.token, null, settings, 0, 0, 3000);
+    expect(quiz.answers[0].option).toBe(0);
+    expect(quiz.answers[0].format).toBeUndefined();
+    expect(quiz.participants[0].score).toBe(1492);
+  });
+});

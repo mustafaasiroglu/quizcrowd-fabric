@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import type { GameView } from '@rayfin-app/shared';
+import type { GameView, SurveyResponse } from '@rayfin-app/shared';
 import { Icon } from './Icon';
+import { SurveyAnswers } from './SurveyAnswers';
 
 type Ranking = NonNullable<GameView['rankings']>[number];
 export function Podium({ rankings }: { rankings: Ranking[] }) {
@@ -15,9 +16,9 @@ export function Podium({ rankings }: { rankings: Ranking[] }) {
     })}
   </div>;
 }
-export function GameScreen({ game, host, guest, nickname, seconds, joinUrl, busy, onControl, onAnswer, onHome, onCopyError }: {
+export function GameScreen({ game, host, guest, nickname, seconds, joinUrl, busy, onControl, onAnswer, onSurveyAnswer, onHome, onCopyError }: {
   game: GameView; host: boolean; guest: boolean; nickname: string; seconds: number; joinUrl: string; busy: boolean;
-  onControl(): void; onAnswer(option: number): void; onHome(): void; onCopyError(error: unknown): void;
+  onControl(): void; onAnswer(option: number): void; onSurveyAnswer(response: SurveyResponse): void; onHome(): void; onCopyError(error: unknown): void;
 }) {
   const [copied, setCopied] = useState('');
   useEffect(() => {
@@ -32,7 +33,7 @@ export function GameScreen({ game, host, guest, nickname, seconds, joinUrl, busy
   const question = game.question;
   const questionLabel = `Question ${game.questionIndex + 1} / ${game.totalQuestions}`;
   const correct = game.correctIndex === undefined ? undefined : question?.options[game.correctIndex];
-  const answered = game.myOption !== undefined;
+  const answered = game.myOption !== undefined || game.myResponse !== undefined;
   const last = game.questionIndex + 1 >= game.totalQuestions;
   const role = host ? 'Host' : guest ? 'Anonymous attendee' : 'Attendee';
   const rankings = game.rankings ?? [];
@@ -67,9 +68,11 @@ export function GameScreen({ game, host, guest, nickname, seconds, joinUrl, busy
           <div className="timer-track" role="progressbar" aria-label="Time remaining" aria-valuemin={0} aria-valuemax={question.duration} aria-valuenow={seconds}><div className="timer-fill" style={{ width: `${Math.min(100, 100 * seconds / question.duration)}%` }} /></div>
         </div>
         <div className="question-text"><p className="muted small">{questionLabel}</p><h1>{question.text}</h1></div>
-        {host || !answered ? <div className={`answers ${question.options.length <= 2 && !host ? 'two-options' : ''}`}>{question.options.map((option, i) => host
+        {!host && !answered && game.mode === 'survey' ? <SurveyAnswers key={`${game.id}-${game.questionIndex}`} question={question} disabled={busy || seconds === 0} onSubmit={onSurveyAnswer} />
+          : host || !answered ? <div className={`answers ${question.options.length <= 2 && !host ? 'two-options' : ''}`}>{question.options.map((option, i) => host
           ? <div className={`answer answer-${i}`} key={i}>{option}</div>
-          : <button className={`answer answer-${i}`} key={i} disabled={busy || seconds === 0} onClick={() => onAnswer(i)}>{option}</button>)}</div>
+          : <button className={`answer answer-${i}`} key={i} disabled={busy || seconds === 0} onClick={() => onAnswer(i)}>{option}</button>)}
+          {host && question.survey?.other && <div className="answer other-choice">{question.options.length ? 'Other (written response)' : 'Written response'}</div>}</div>
           : <div className="card submitted" role="status">
             <div className={`result-symbol ${game.myResult ? game.myResult.correct ? 'success' : 'danger-text' : ''}`} aria-hidden="true">{game.myResult && !game.myResult.correct ? '✗' : '✓'}</div>
             {correct !== undefined && <div className="correct-answer"><p className="small muted">Correct Answer</p><strong>{correct}</strong></div>}
@@ -84,7 +87,7 @@ export function GameScreen({ game, host, guest, nickname, seconds, joinUrl, busy
       <h1>{correct !== undefined ? 'Correct Answer' : game.mode === 'survey' ? 'Responses are in!' : 'Results are in!'}</h1>
       {correct !== undefined && <div className="correct-answer"><strong>{correct}</strong></div>}
       {!host && game.myResult && <div><p className={`result-points ${game.myResult.correct ? 'success' : 'danger-text'}`}>{game.myResult.correct ? `+${game.myResult.points} pts` : 'Not quite!'}</p><p className="muted small">Total: {game.myResult.score} pts</p></div>}
-      {game.distribution && question && <ul className="distribution" aria-label="Response distribution">{question.options.map((option, i) => <li key={i}><span>{option}</span><strong>{game.distribution![i]} responses</strong></li>)}</ul>}
+      {game.distribution && question && <ul className="distribution" aria-label="Response distribution">{question.options.map((option, i) => <li key={i}><span>{option}</span><strong>{game.distribution![i]} responses</strong></li>)}{game.otherCount !== undefined && <li><span>{question.options.length ? 'Other' : 'Written responses'}</span><strong>{game.otherCount} responses</strong></li>}</ul>}
       <p className="muted small">Leaderboard coming up...</p>
     </section> : game.phase === 'leaderboard' ? <section className={`card leaderboard ${host ? 'wide-result' : ''}`}>
       <h1>{last && host ? '🏁 Final Standings' : '📊 Leaderboard'}</h1>

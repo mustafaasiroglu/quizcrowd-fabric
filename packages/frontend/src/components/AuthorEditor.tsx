@@ -11,7 +11,9 @@ export const blankDraft = (mode: Draft['mode'] = 'quiz'): Draft => ({
 });
 export function removeOption(question: Question, index: number): Question {
   const correct = question.correctIndex;
-  return { ...question, options: question.options.filter((_, i) => i !== index),
+  const options = question.options.filter((_, i) => i !== index);
+  return { ...question, options,
+    ...(question.survey && !options.length ? { survey: { ...question.survey, allowMultiple: false } } : {}),
     correctIndex: correct === null || correct === index ? null : correct > index ? correct - 1 : correct };
 }
 export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy, readOnly = false, onSave, onBack, onHost, onRevokePublic }: {
@@ -48,16 +50,26 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
               <button type="button" className="icon-button" disabled={i === draft.questions.length - 1} aria-label={`Move question ${i + 1} down`} onClick={() => move(i, 1)}><Icon name="down" /></button>
             </div>}
             {timing.mode === 'custom' && <label className="duration"><Icon name="clock" /><span className="sr-only">Question {i + 1} duration in seconds</span><input type="number" min={5} max={120} required value={q.duration} onChange={(e) => updateQuestion(i, { duration: Number(e.target.value) })} /><span>s</span></label>}
+            {draft.mode === 'survey' && <details className="question-settings" onKeyDown={(event) => {
+              if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); }
+            }}><summary className="icon-button" aria-label={`Question ${i + 1} settings`}><Icon name="settings" /></summary>
+              <div className="question-settings-menu"><label className="check"><input type="checkbox" aria-label={`Question ${i + 1} allow multiple`} checked={!!q.survey?.allowMultiple} disabled={!q.options.length} onChange={event => updateQuestion(i, { survey: { other: !!q.survey?.other, allowMultiple: event.target.checked } })} />Allow multiple</label>
+                {!q.options.length && <p className="small muted">Not applicable to a written-response-only question.</p>}
+              </div>
+            </details>}
             {!readOnly && draft.questions.length > 1 && <button type="button" className="icon-button delete-action" aria-label={`Remove question ${i + 1}`} onClick={() => setRemoving(i)}><Icon name="trash" /></button>}
           </div>
           <label className="sr-only" htmlFor={`question-${i}`}>Question {i + 1} text</label><textarea id={`question-${i}`} placeholder="Enter your question" required maxLength={1000} rows={2} value={q.text} onChange={(e) => updateQuestion(i, { text: e.target.value })} />
           <div className="option-editor-grid">{q.options.map((option, k) => <div className={`option-editor ${draft.mode === 'quiz' && q.correctIndex === k ? 'is-correct' : ''}`} key={k}>
             {draft.mode === 'quiz' && <input type="radio" name={`correct-${i}`} required aria-label={`Question ${i + 1}, correct option ${k + 1}`} checked={q.correctIndex === k} onChange={() => updateQuestion(i, { correctIndex: k })} />}
             <label className="sr-only" htmlFor={`option-${i}-${k}`}>Question {i + 1}, option {k + 1}</label><input id={`option-${i}-${k}`} placeholder={`Option ${k + 1}`} required maxLength={300} value={option} onChange={(e) => updateQuestion(i, { options: q.options.map((o, n) => n === k ? e.target.value : o) })} />
-            {!readOnly && q.options.length > 2 && <button type="button" className="icon-button delete-action remove-option" aria-label={`Remove question ${i + 1} option ${k + 1}`} onClick={() => updateQuestion(i, removeOption(q, k))}><Icon name="trash" /></button>}
-          </div>)}</div>
+            {!readOnly && (q.options.length > 2 || (draft.mode === 'survey' && q.survey?.other)) && <button type="button" className="icon-button delete-action remove-option" aria-label={`Remove question ${i + 1} option ${k + 1}`} onClick={() => updateQuestion(i, removeOption(q, k))}><Icon name="trash" /></button>}
+          </div>)}
+            {draft.mode === 'survey' && q.survey?.other && <div className="option-editor other-option"><span>Other <span className="small muted">(written response)</span></span>{!readOnly && <button type="button" className="icon-button delete-action" aria-label={`Remove question ${i + 1} Other`} disabled={q.options.length < 2} onClick={() => updateQuestion(i, { survey: { other: false, allowMultiple: !!q.survey?.allowMultiple } })}><Icon name="trash" /></button>}</div>}
+          </div>
           {draft.mode === 'quiz' && <p className="muted small option-hint">Select the circle beside the correct answer.</p>}
           {!readOnly && q.options.length < 4 && <button type="button" className="text-button" onClick={() => updateQuestion(i, { options: [...q.options, ''] })}><Icon name="plus" />Add option</button>}
+          {!readOnly && draft.mode === 'survey' && !q.survey?.other && <button type="button" className="text-button add-other" aria-label={`Add Other to question ${i + 1}`} onClick={() => updateQuestion(i, { survey: { other: true, allowMultiple: !!q.survey?.allowMultiple } })}><Icon name="plus" />Add Other</button>}
         </fieldset>)}</div>
         {!readOnly && <div className="editor-actions"><button type="button" className="outline-primary" disabled={draft.questions.length >= 40} onClick={() => {
           onChange({ ...draft, answerDuration: timing, questions: [...draft.questions, blankQuestion(timing.seconds)] });

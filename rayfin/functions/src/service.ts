@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getAnswerDuration } from '@rayfin-app/shared';
+import { getAnswerDuration, MAX_SURVEY_TEXT_LENGTH } from '@rayfin-app/shared';
 import type { Store } from './sql-store.js';
 import {
   answer, control, createGame, Denied, Conflict, draftSchema, join, own, preview,
@@ -17,6 +17,7 @@ const requestSchema = z.object({
   action: z.enum(['start', 'next']).optional(),
   questionIndex: z.number().int().min(0).max(39).optional(),
   option: z.number().int().min(0).max(5).optional(),
+  response: z.object({ options: z.array(z.number().int().min(0).max(5)).max(6), other: z.string().max(MAX_SURVEY_TEXT_LENGTH).optional() }).strict().optional(),
   draft: draftSchema.optional(),
 }).strict();
 
@@ -97,8 +98,10 @@ export async function execute(
       case 'state': result = view(game, token, subject, settings, now); break;
       case 'host': result = view(game, '', subject, settings, now, true); break;
       case 'answer':
-        if (input.questionIndex === undefined || input.option === undefined) throw new Conflict('Select an option and question.');
-        result = answer(game, token, subject, settings, input.questionIndex, input.option, now);
+        if (input.questionIndex === undefined || (input.option === undefined) === (input.response === undefined)) {
+          throw new Conflict('Specify a question and exactly one answer payload.');
+        }
+        result = answer(game, token, subject, settings, input.questionIndex, input.response ?? input.option!, now);
         break;
       case 'control':
         if (input.version === undefined || !input.action) throw new Conflict('Host version and action are required.');

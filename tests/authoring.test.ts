@@ -32,6 +32,38 @@ function fixture(mode: 'quiz' | 'survey' = 'quiz') {
   return { store, legacy, games: () => games, game: () => games[0] };
 }
 describe('six-digit codes and owner authoring transactions (test store)', () => {
+  it('persists survey flags and pipe answers through JSON, reopen, duplicate and existing service locks', async () => {
+    const f = fixture('survey');
+    const revised = { ...authorDraft(f.game()), questions: [
+      { ...f.game().questions[0], survey: { other: true, allowMultiple: true } },
+      { text: 'Written feedback', options: [], duration: 20, correctIndex: null, survey: { other: true, allowMultiple: false } },
+    ] };
+    await execute(f.store, { command: 'edit', id: f.game().id, draft: revised }, 'owner', '');
+    expect(await execute(f.store, { command: 'edit', id: f.game().id }, 'owner', '')).toMatchObject({ draft: revised });
+    const copy = await execute(f.store, { command: 'duplicate', id: f.game().id }, 'owner', '') as { id: string };
+    expect(f.games().find(g => g.id === copy.id)?.questions).toEqual(revised.questions);
+    const ticket = await execute(f.store, { command: 'join', id: f.game().id, nickname: 'A' }, 'a', '', 1000) as { token: string };
+    await execute(f.store, { command: 'control', id: f.game().id, action: 'start', version: f.game().version }, 'owner', '', 2000);
+    for (const payload of [
+      {}, { option: 0, response: { options: [0] } }, { response: { options: [0, 0] } },
+      { response: { options: [5] } }, { response: { options: [], other: 'x'.repeat(501) } },
+      { response: { options: [], other: '  ' } }, { response: { options: [0], untrusted: 'extra' } },
+    ]) await expect(execute(f.store, { command: 'answer', id: f.game().id, questionIndex: 0, ...payload }, 'a', ticket.token, 3000)).rejects.toThrow();
+    await Promise.all(Array.from({ length: 5 }, () => execute(f.store,
+      { command: 'answer', id: f.game().id, questionIndex: 0, response: { options: [1, 0], other: 'Pipes | and \\ literal' } }, 'a', ticket.token, 3000)));
+    const stored = JSON.parse(JSON.stringify(f.game()));
+    expect(stored.answers).toHaveLength(1);
+    expect(stored.answers[0]).toMatchObject({ option: 'o:0|o:1|t:Pipes \\| and \\\\ literal', format: 'survey-v1', points: 0, correct: false });
+    const owner = await execute(f.store, { command: 'edit', id: f.game().id }, 'owner', '');
+    expect(owner).toMatchObject({ readOnly: true, draft: revised });
+    await expect(execute(f.store, { command: 'edit', id: f.game().id, draft: revised }, 'owner', '')).rejects.toThrow('read-only');
+    expect(await execute(f.store, { command: 'state', id: f.game().id }, 'a', ticket.token, 3000)).toMatchObject({ myResponse: { options: [0, 1], other: 'Pipes | and \\ literal' }, otherCount: 1, distribution: [1, 1] });
+    const host = await execute(f.store, { command: 'host', id: f.game().id }, 'owner', '', 3000);
+    expect(JSON.stringify(host)).not.toContain('Pipes');
+    for (const subject of [null, 'stranger']) {
+      await expect(execute(f.store, { command: 'edit', id: f.game().id }, subject, '')).rejects.toThrow();
+    }
+  });
   it('rejects quiz/survey type mutation and duplicates the original type', async () => {
     const f = fixture();
     const survey = { ...draft, mode: 'survey', questions: draft.questions.map(q => ({ ...q, correctIndex: null })) };

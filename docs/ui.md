@@ -149,6 +149,36 @@ with **Requires sign-in with organization account**, then **Anyone with link**
 with **Anonymous response, doesn't require sign-in**. These shorter labels do
 not change the Entra directory-guest semantics or enable anonymous access.
 
+## Survey Other and Allow multiple
+
+Survey questions offer **Add Other** below the normal choices, and an accessible
+question-settings disclosure in the upper-right with an **Allow multiple**
+checkbox. Quiz questions expose neither feature. With Other enabled, creators
+can remove every normal option. Removing the last one turns Allow multiple off
+and disables it, because a single written response cannot contain multiple
+choices. The server independently rejects that unsupported combination.
+Other cannot be removed until two normal choices remain, preventing an empty
+or invalid single-choice question.
+
+Attendees use radio choices by default or checkboxes when Allow multiple is on,
+then **Submit response**. Selecting Other shows a required written-response
+input; deselecting it clears its text and omits it from submission.
+With only Other remaining, the screen shows the input directly without a
+visible Other label; its accessible name is **Your response**. Whitespace-only
+text cannot be submitted. Text is trimmed and limited to 500 UTF-16 code units.
+The existing server-controlled live timeout still applies.
+
+Question flags survive save/reopen/duplicate, question removal/reordering,
+duration changes and the existing read-only lock. Answers remain in the existing
+game JSON, using versioned reversible pipe-delimited encoding in the existing
+answer field; literal pipes/backslashes are preserved. See
+[architecture.md](architecture.md#survey-other-and-multiple-selection-responses)
+for the exact format and validation. No SQL table/column/migration is added.
+Legacy numeric single answers and Quiz scoring remain compatible.
+Results show aggregate normal-choice/Other counts only; no other attendee's
+individual written feedback is exposed. Multiple choices count independently,
+not as extra submitted responses.
+
 ## Answer duration
 
 New content defaults to **Same for all**, 20 seconds. Only the settings panel
@@ -229,6 +259,14 @@ or authentication test. Use the supported Rayfin dev flow in deployment.md for
 real runtime integration; do not enable new cloud redirects/permissions merely
 to review layout.
 
+The same **test-only** preview also includes already-running synthetic Survey
+examples. Open `/join/?code=000123&example=survey-multiple` for multiple choices
+plus Other, `/join/?code=000123&example=survey-single` for radio choices plus
+Other, or `/join/?code=000123&example=survey-other-only` for direct written
+feedback. Enter a demo nickname and Join Game; no real authentication, SQL
+or host session is involved. These query parameters have no production feature
+or authorization effect. Create your own Survey from home to inspect the editor.
+
 The browser matrix covers both themes at 1440px and 390px, with a 320px
 overflow check. It uses actual pointer/keyboard events for navigation, theme
 selection and dialogs, checks accessible names from Chromium's accessibility
@@ -244,6 +282,13 @@ legacy invitation resolution, native menu keyboard handling, duplicate, delete
 confirmation/cancellation, avatar-menu keyboard/outside dismissal, physical
 deep-route reloads, native back/forward, pending/failed/abandoned joins and
 admin/owner guard presentation alongside existing game flows.
+Survey checks additionally exercise the settings disclosure by keyboard,
+mixed choices/Other, deleting all normal choices, save/reopen/reload/duplicate,
+started read-only controls, radio/checkbox semantics, unselected-text cleanup,
+poll-safe selection state, typed submission, Other-only accessible naming and
+aggregate-only results in both themes at desktop/mobile sizes. Unit/service
+checks cover actual encoded JSON persistence, literal pipe/backslash roundtrips,
+malformed requests, legacy answers, idempotency and unchanged Quiz scoring.
 
 Real browser captures and the report are saved under the ignored directory
 `rayfin\.temp\routing-review\`. They use synthetic test content:
@@ -258,6 +303,9 @@ Real browser captures and the report are saved under the ignored directory
 | Editor | `rayfin\.temp\routing-review\dark-desktop-author.png` |
 | Same for all | `rayfin\.temp\routing-review\dark-desktop-settings.png` |
 | Custom durations | `rayfin\.temp\routing-review\light-mobile-custom-duration.png` |
+| Survey settings | `rayfin\.temp\routing-review\light-desktop-survey-settings.png` |
+| Multiple choices and Other | `rayfin\.temp\routing-review\dark-desktop-survey-multiple-other.png` |
+| Other-only written response | `rayfin\.temp\routing-review\light-mobile-survey-only-other.png` |
 | Equal custom durations reopened | `rayfin\.temp\routing-review\dark-desktop-equal-custom-reopen.png` |
 | QR lobby | `rayfin\.temp\routing-review\light-mobile-host-lobby.png` |
 | Host question | `rayfin\.temp\routing-review\dark-desktop-host-question.png` |

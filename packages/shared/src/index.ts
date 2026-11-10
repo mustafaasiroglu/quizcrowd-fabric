@@ -9,6 +9,42 @@ export interface Question {
   options: string[];
   correctIndex: number | null;
   duration: number;
+  survey?: SurveySettings;
+}
+export interface SurveySettings { other: boolean; allowMultiple: boolean }
+export interface SurveyResponse { options: number[]; other?: string }
+export type AnswerSubmission = { option: number; response?: never } | { response: SurveyResponse; option?: never };
+export const MAX_SURVEY_TEXT_LENGTH = 500;
+export const MAX_SURVEY_ANSWER_LENGTH = 2048;
+export function encodeSurveyResponse(response: SurveyResponse): string {
+  const parts = response.options.map(index => `o:${index}`);
+  if (response.other !== undefined) parts.push(`t:${response.other.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')}`);
+  return parts.join('|');
+}
+export function decodeSurveyResponse(value: string): SurveyResponse {
+  if (!value || value.length > MAX_SURVEY_ANSWER_LENGTH) throw new Error('Invalid persisted survey response.');
+  const parts: string[] = [];
+  let part = '', escaped = false;
+  for (const character of value) {
+    if (escaped) {
+      if (character !== '\\' && character !== '|') throw new Error('Invalid persisted survey escape.');
+      part += character; escaped = false;
+    } else if (character === '\\') escaped = true;
+    else if (character === '|') { parts.push(part); part = ''; }
+    else part += character;
+  }
+  if (escaped) throw new Error('Incomplete persisted survey escape.');
+  parts.push(part);
+  const result: SurveyResponse = { options: [] };
+  for (const token of parts) {
+    if (/^o:[0-5]$/.test(token) && result.other === undefined) result.options.push(Number(token.slice(2)));
+    else if (token.startsWith('t:') && token.length > 2 && result.other === undefined) result.other = token.slice(2);
+    else throw new Error('Invalid persisted survey token.');
+  }
+  if (new Set(result.options).size !== result.options.length || (result.other?.length ?? 0) > MAX_SURVEY_TEXT_LENGTH) {
+    throw new Error('Invalid persisted survey selections.');
+  }
+  return result;
 }
 export interface AnswerDuration {
   mode: 'same' | 'custom';
@@ -37,6 +73,7 @@ export interface PublicQuestion {
   text: string;
   options: string[];
   duration: number;
+  survey?: SurveySettings;
 }
 export interface GameView {
   id: string;
@@ -53,9 +90,11 @@ export interface GameView {
   players: string[];
   answerCount: number;
   myOption?: number;
+  myResponse?: SurveyResponse;
   correctIndex?: number;
   myResult?: { correct: boolean; points: number; score: number };
   distribution?: number[];
+  otherCount?: number;
   rankings?: { nickname: string; score: number; streak: number; rank: number }[];
 }
 export interface QuizSummary {

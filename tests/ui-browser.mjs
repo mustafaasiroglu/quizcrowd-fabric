@@ -7,7 +7,7 @@ import { startPreview } from './ui-preview.mjs';
 const edge = process.env.QUIZCROWD_TEST_BROWSER ?? 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const directory = resolve('rayfin', '.temp', 'routing-review');
 const profile = resolve('rayfin', '.temp', 'edge-ui-review');
-const report = { kind: 'Local real-browser UI tests with test-only connection fixtures; not live Fabric authorization', checks: [], screenshots: [], contrast: [] };
+const report = { kind: 'Local real-browser UI tests with test-only connection fixtures; not live Fabric authorization', filter: process.env.QUIZCROWD_UI_FILTER ?? null, checks: [], screenshots: [], contrast: [] };
 let browser, cdp, server;
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function connect() {
@@ -90,6 +90,7 @@ async function screenshot(name) {
   report.screenshots.push(relative);
 }
 async function check(name, run) {
+  if (process.env.QUIZCROWD_UI_FILTER && !name.includes(process.env.QUIZCROWD_UI_FILTER)) return;
   await run();
   report.checks.push({ name, passed: true });
 }
@@ -465,6 +466,114 @@ try {
     await phase('finished'); assert.equal(await evaluate('!!document.querySelector(".podium")'), false);
     await screenshot('light-mobile-survey-finished');
   });
+  for (const [size, width, height] of [['desktop', 1440, 1000], ['mobile', 390, 844]]) {
+    await cdp.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false }, session);
+    for (const theme of ['dark', 'light']) {
+      const label = `${theme}-${size}`;
+      await check(`${label}: survey settings, save/reopen/duplicate, delete all choices and readonly`, async () => {
+        await navigate(); await click(theme === 'dark' ? 'Dark' : 'Light'); await click('New Live Survey');
+        await input('#quiz-title', 'Survey with Other'); await input('#question-0', 'What would you like next?');
+        for (const [i, option] of ['Sessions', 'Workshops', 'Demos', 'Labs'].entries()) await input(`#option-0-${i}`, option);
+        await click('Add Other to question 1');
+        await evaluate('document.querySelector(".question-settings summary").focus()');
+        await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', text: '\r', windowsVirtualKeyCode: 13 }, session);
+        await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, session);
+        await until('document.querySelector(".question-settings").open');
+        assert.equal(await evaluate('(() => {const r=document.querySelector(".question-settings-menu").getBoundingClientRect();return r.left>=0 && r.right<=innerWidth;})()'), true);
+        await pointerClick('document.querySelector(".question-settings input")');
+        assert.equal(await evaluate('document.querySelector(".question-settings input").checked'), true);
+        await inspectScreen(`${label}-survey-settings`); await screenshot(`${label}-survey-settings`);
+        await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, session);
+        await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, session);
+        assert.equal(await evaluate('document.querySelector(".question-settings").open'), false);
+        assert.equal(await evaluate('document.activeElement.tagName'), 'SUMMARY');
+        await click('Save & Open Lobby'); await until('!!document.querySelector(".host-lobby")');
+        await pointerClick('document.querySelector(".small-brand")'); await until('!!document.querySelector(".session-open")');
+        await pointerClick('document.querySelector(".session-open")'); await until('!!document.querySelector(".author")');
+        assert.equal(await evaluate('document.querySelector(".question-settings input").checked'), true);
+        await cdp.call('Page.reload', {}, session); await until('!!document.querySelector(".author")');
+        assert.equal(await evaluate('document.querySelector(".question-settings input").checked'), true);
+        for (let i = 0; i < 4; i++) await click('Remove question 1 option 1');
+        assert.equal(await evaluate('document.querySelectorAll(\'input[id^="option-"]\').length'), 0);
+        assert.equal(await evaluate('document.querySelector(".question-settings input").checked'), false);
+        assert.equal(await evaluate('document.querySelector(".question-settings input").disabled'), true);
+        assert.equal(await evaluate('document.querySelector(\'[aria-label="Remove question 1 Other"]\').disabled'), true);
+        await pointerClick('document.querySelector(".question-settings summary")');
+        await inspectScreen(`${label}-survey-only-other-author`); await screenshot(`${label}-survey-only-other-author`);
+        await click('Save & Open Lobby'); await until('!!document.querySelector(".host-lobby")');
+        const saved = await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="edit"&&r.draft).draft');
+        assert.deepEqual(saved.questions[0].survey, { other: true, allowMultiple: false });
+        assert.deepEqual(saved.questions[0].options, []);
+        await pointerClick('document.querySelector(".small-brand")'); await until('!!document.querySelector(".session-menu")');
+        await pointerClick('document.querySelector(".session-menu summary")'); await click('Duplicate');
+        await until('!!document.querySelector(".author-content:not(:disabled)")');
+        assert.equal(await evaluate('document.querySelector(".question-settings input").disabled'), true);
+        assert.equal(await evaluate('document.querySelectorAll(\'input[id^="option-"]\').length'), 0);
+        await click('Save & Open Lobby'); await until('!!document.querySelector(".host-lobby")');
+        await evaluate('window.__quizcrowdFixture.phase("question")');
+        await pointerClick('document.querySelector(".small-brand")'); await until('!!document.querySelector(".session-open")');
+        await pointerClick('document.querySelector(".session-open")'); await until('!!document.querySelector(".readonly-notice")');
+        assert.equal(await evaluate('document.querySelector(".question-settings input").matches(":disabled")'), true);
+      });
+      await check(`${label}: survey multiple + Other picker, payload, polling and reload`, async () => {
+        await navigate('join/?code=000123&example=survey-multiple');
+        await input('#nickname', 'Survey tester'); await click('Join Game'); await until('!!document.querySelector(".survey-response")');
+        assert.equal(await evaluate('document.querySelectorAll(".survey-choice input[type=checkbox]").length'), 3);
+        await evaluate('document.querySelector(".survey-choice input").focus()');
+        await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 }, session);
+        await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 }, session);
+        for (const index of [1, 2]) await pointerClick(`document.querySelectorAll(".survey-choice input")[${index}]`);
+        await input('.survey-written-response textarea', 'Literal | and \\ feedback');
+        await pause(1200);
+        assert.equal(await evaluate('document.querySelectorAll(".survey-choice input:checked").length'), 3);
+        await inspectScreen(`${label}-survey-multiple-other`); await screenshot(`${label}-survey-multiple-other`);
+        await click('Submit response'); await until('!!document.querySelector(".submitted")');
+        assert.deepEqual(await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="answer").response'), { options: [0, 1], other: 'Literal | and \\ feedback' });
+        assert.equal(await evaluate('"option" in window.__quizcrowdFixture.requests.findLast(r=>r.command==="answer")'), false);
+        await cdp.call('Page.reload', {}, session); await until('!!document.querySelector(".submitted")');
+        assert.equal(await evaluate('document.querySelector(".survey-response")===null'), true);
+        await phase('reveal'); await inspectScreen(`${label}-survey-multiple-results`); await screenshot(`${label}-survey-multiple-results`);
+        assert.equal(await evaluate('document.querySelector(".distribution").textContent.includes("Other1 responses")'), true);
+        assert.equal(await evaluate('document.body.textContent.includes("Literal | and")'), false);
+      });
+      await check(`${label}: survey single selection clears unchosen Other text`, async () => {
+        await navigate('join/?code=000123&example=survey-single');
+        await input('#nickname', 'Survey tester'); await click('Join Game'); await until('!!document.querySelector(".survey-response")');
+        assert.equal(await evaluate('document.querySelectorAll(".survey-choice input[type=radio]").length'), 3);
+        await pointerClick('document.querySelector(".other-choice input")');
+        await input('.survey-written-response textarea', 'Unselected | stale \\ text');
+        await pointerClick('document.querySelectorAll(".survey-choice input")[0]');
+        await pointerClick('document.querySelectorAll(".survey-choice input")[1]');
+        assert.equal(await evaluate('document.querySelectorAll(".survey-choice input:checked").length'), 1);
+        assert.equal(await evaluate('document.querySelector(".survey-written-response")===null'), true);
+        await inspectScreen(`${label}-survey-single`);
+        await click('Submit response'); await until('!!document.querySelector(".submitted")');
+        assert.deepEqual(await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="answer").response'), { options: [1] });
+        await navigate('join/?code=000123&example=survey-multiple');
+        await input('#nickname', 'Survey tester'); await click('Join Game'); await until('!!document.querySelector(".survey-response")');
+        for (const index of [0, 1, 2]) await pointerClick(`document.querySelectorAll(".survey-choice input")[${index}]`);
+        await input('.survey-written-response textarea', 'Unselected stale multi text');
+        await pointerClick('document.querySelector(".other-choice input")');
+        assert.equal(await evaluate('document.querySelector(".survey-written-response")===null'), true);
+        assert.equal(await evaluate('document.querySelectorAll(".survey-choice input:checked").length'), 2);
+        await click('Submit response'); await until('!!document.querySelector(".submitted")');
+        assert.deepEqual(await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="answer").response'), { options: [0, 1] });
+      });
+      await check(`${label}: survey Other-only accessible written response, no Other label`, async () => {
+        await navigate('join/?code=000123&example=survey-other-only');
+        await input('#nickname', 'Survey tester'); await click('Join Game'); await until('!!document.querySelector(".survey-response")');
+        assert.equal(await evaluate('document.querySelector(".survey-response").innerText.includes("Other")'), false);
+        assert.equal(await evaluate('document.querySelectorAll(".survey-choice").length'), 0);
+        assert.equal(await evaluate('document.querySelector(".survey-response button[type=submit]").disabled'), true);
+        await input('.survey-written-response textarea', '   ');
+        assert.equal(await evaluate('document.querySelector(".survey-response button[type=submit]").disabled'), true);
+        await input('.survey-written-response textarea', '  Written | response \\  ');
+        await inspectScreen(`${label}-survey-only-other`); await screenshot(`${label}-survey-only-other`);
+        await click('Submit response'); await until('!!document.querySelector(".submitted")');
+        assert.deepEqual(await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="answer").response'), { options: [], other: 'Written | response \\' });
+      });
+    }
+  }
   await check('public warning requires acknowledgement and creator cannot see publisher admin', async () => {
     await navigate('?fixture=creator&guests=on'); await click('New Live Quiz');
     assert.equal(await evaluate('[...document.querySelectorAll("button")].some(e=>e.textContent==="Publisher controls")'), false);

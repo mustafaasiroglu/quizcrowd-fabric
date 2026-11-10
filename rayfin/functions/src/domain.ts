@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import type { Draft, GameView, Phase, QuizSummary, SettingsView } from '@rayfin-app/shared';
-import { getAnswerDuration } from '@rayfin-app/shared';
+import type { Draft, GameView, Phase, Question, QuizSummary, SettingsView, SurveyResponse } from '@rayfin-app/shared';
+import { decodeSurveyResponse, encodeSurveyResponse, getAnswerDuration, MAX_SURVEY_ANSWER_LENGTH, MAX_SURVEY_TEXT_LENGTH } from '@rayfin-app/shared';
 
 export class Denied extends Error {}
 export class Conflict extends Error {}
@@ -15,13 +15,23 @@ export const draftSchema = z.object({
   answerDuration: z.object({ mode: z.enum(['same', 'custom']), seconds: z.number().int().min(5).max(120) }).strict().optional(),
   questions: z.array(z.object({
     text: z.string().trim().min(1).max(1000),
-    options: z.array(z.string().trim().min(1).max(300)).min(2).max(6)
+    options: z.array(z.string().trim().min(1).max(300)).max(6)
       .refine((xs) => new Set(xs).size === xs.length, 'Options must be distinct'),
     correctIndex: z.number().int().min(0).nullable(),
     duration: z.number().int().min(5).max(120),
+    survey: z.object({ other: z.boolean(), allowMultiple: z.boolean() }).strict().optional(),
   }).strict()).min(1).max(40),
 }).strict().superRefine((draft, ctx) => {
   draft.questions.forEach((q, i) => {
+    if (q.options.length < 2 && !(draft.mode === 'survey' && q.survey?.other)) {
+      ctx.addIssue({ code: 'custom', message: 'Provide at least two options or enable Other for a survey', path: ['questions', i, 'options'] });
+    }
+    if (draft.mode === 'quiz' && q.survey) {
+      ctx.addIssue({ code: 'custom', message: 'Other and multiple selection are only supported by surveys', path: ['questions', i, 'survey'] });
+    }
+    if (q.survey?.allowMultiple && !q.options.length) {
+      ctx.addIssue({ code: 'custom', message: 'Other-only questions cannot allow multiple choices', path: ['questions', i, 'survey'] });
+    }
     if (draft.answerDuration?.mode === 'same' && q.duration !== draft.answerDuration.seconds) {
       ctx.addIssue({ code: 'custom', message: 'Every question must use the shared answer duration', path: ['questions', i, 'duration'] });
     }
@@ -48,13 +58,13 @@ export interface Participant {
   score: number;
   streak: number;
 }
-export interface Answer {
+interface AnswerBase {
   participantId: string;
   questionIndex: number;
-  option: number;
   correct: boolean;
   points: number;
 }
+export type Answer = AnswerBase & ({ option: number; format?: undefined } | { option: string; format: 'survey-v1' });
 export interface Game extends Draft {
   id: string;
   code: string;
@@ -110,7 +120,7 @@ export function preview(game: Game, subject: string | null, settings: Settings) 
   if (!subject) guestAllowed(game, settings);
   return {
     id: game.id, code: game.code, title: game.title, mode: game.mode,
-    questions: game.questions.map(({ text, options, duration }) => ({ text, options, duration })),
+    questions: game.questions.map(publicQuestion),
   };
 }
 export function participant(
@@ -191,28 +201,61 @@ export function control(game: Game, action: string, version: number, subject: st
 }
 export function answer(
   game: Game, token: string, subject: string | null, settings: Settings,
-  questionIndex: number, option: number, now: number,
+  questionIndex: number, selection: number | SurveyResponse, now: number,
 ): { accepted: true } {
   const p = participant(game, token, subject, settings, now);
+  const question = game.questions[questionIndex];
+  if (!question) throw new Conflict('Invalid question.');
+  let option: number | undefined, response: SurveyResponse | undefined;
+  if (game.mode === 'quiz') {
+    if (typeof selection !== 'number' || !Number.isInteger(selection) || selection < 0 || selection >= question.options.length) {
+      throw new Conflict('Invalid response option.');
+    }
+    option = selection;
+  } else response = surveyResponse(question, typeof selection === 'number' ? { options: [selection] } : selection);
   const existing = game.answers.find((a) => a.participantId === p.id && a.questionIndex === questionIndex);
   if (existing) {
-    if (existing.option !== option) throw new Conflict('An answer cannot be changed.');
+    const same = game.mode === 'quiz' ? existing.option === option
+      : encodeSurveyResponse(savedSurveyResponse(existing)) === encodeSurveyResponse(response!);
+    if (!same) throw new Conflict('An answer cannot be changed.');
     return { accepted: true };
   }
   advance(game, now);
   if (game.phase !== 'question' || questionIndex !== game.questionIndex) throw new Conflict('Question is closed.');
-  const question = game.questions[questionIndex];
-  if (!Number.isInteger(option) || option < 0 || option >= question.options.length) {
-    throw new Conflict('Invalid response option.');
-  }
   const correct = game.mode === 'quiz' && option === question.correctIndex;
   const ratio = Math.max(0, 1 - (now - game.questionStartedAt) / (question.duration * 1000));
   const points = correct ? 1000 + Math.round(ratio * 500) : 0;
   p.score += points;
   p.streak = correct ? p.streak + 1 : 0;
-  game.answers.push({ participantId: p.id, questionIndex, option, correct, points });
+  const base = { participantId: p.id, questionIndex, correct, points };
+  if (response) game.answers.push({ ...base, option: encodeSurveyResponse(response), format: 'survey-v1' });
+  else game.answers.push({ ...base, option: option! });
   advance(game, now);
   return { accepted: true };
+}
+export function surveyResponse(question: Question, input: unknown): SurveyResponse {
+  const parsed = z.object({
+    options: z.array(z.number().int().min(0).max(5)).max(6),
+    other: z.string().trim().min(1).max(MAX_SURVEY_TEXT_LENGTH)
+      .refine(text => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(text), 'Invalid response characters').optional(),
+  }).strict().parse(input);
+  if (new Set(parsed.options).size !== parsed.options.length || parsed.options.some(i => i >= question.options.length)) {
+    throw new Conflict('Invalid or duplicate response options.');
+  }
+  if (parsed.other !== undefined && !question.survey?.other) throw new Conflict('Other is not enabled for this question.');
+  const count = parsed.options.length + (parsed.other === undefined ? 0 : 1);
+  if (!count || (!question.survey?.allowMultiple && count !== 1)) throw new Conflict('Select the allowed number of responses.');
+  const normalized = { ...parsed, options: [...parsed.options].sort((a, b) => a - b) };
+  if (encodeSurveyResponse(normalized).length > MAX_SURVEY_ANSWER_LENGTH) throw new Conflict('Response is too long.');
+  return normalized;
+}
+function savedSurveyResponse(answer: Answer): SurveyResponse {
+  if (answer.format === 'survey-v1') return decodeSurveyResponse(answer.option);
+  if (answer.format === undefined && typeof answer.option === 'number') return { options: [answer.option] };
+  throw new Error('Unsupported persisted survey response format.');
+}
+function publicQuestion({ text, options, duration, survey }: Question) {
+  return { text, options, duration, ...(survey ? { survey } : {}) };
 }
 export function view(
   game: Game, token: string, subject: string | null, settings: Settings, now: number, host = false,
@@ -230,10 +273,15 @@ export function view(
     players: game.participants.map((p) => p.nickname), answerCount: answers.length,
   };
   if (q) {
-    result.question = { text: q.text, options: q.options, duration: q.duration };
+    result.question = publicQuestion(q);
     result.questionStartedAt = game.questionStartedAt;
   }
-  if (mine) result.myOption = mine.option;
+  if (mine) {
+    if (game.mode === 'survey') {
+      result.myResponse = savedSurveyResponse(mine);
+      if (result.myResponse.options.length === 1 && result.myResponse.other === undefined) result.myOption = result.myResponse.options[0];
+    } else if (typeof mine.option === 'number') result.myOption = mine.option;
+  }
   const revealed = game.phase !== 'question' && game.phase !== 'lobby';
   const showOwn = revealed || (game.showAnswer === 'after_response' && !!mine);
   if (q && game.mode === 'quiz' && game.showAnswer !== 'never' && showOwn) {
@@ -242,7 +290,13 @@ export function view(
   if (mine && p && showOwn && game.mode === 'quiz') {
     result.myResult = { correct: mine.correct, points: mine.points, score: p.score };
   }
-  if (revealed && q) result.distribution = q.options.map((_, i) => answers.filter((a) => a.option === i).length);
+  if (revealed && q) {
+    if (game.mode === 'survey') {
+      const responses = answers.map(savedSurveyResponse);
+      result.distribution = q.options.map((_, i) => responses.filter(r => r.options.includes(i)).length);
+      if (q.survey?.other) result.otherCount = responses.filter(r => r.other !== undefined).length;
+    } else result.distribution = q.options.map((_, i) => answers.filter(a => a.option === i).length);
+  }
   if (game.phase === 'leaderboard' || game.phase === 'finished') {
     result.rankings = [...game.participants].sort((a, b) => b.score - a.score || a.nickname.localeCompare(b.nickname))
       .map((p, i) => ({ nickname: p.nickname, score: p.score, streak: p.streak, rank: i + 1 }));

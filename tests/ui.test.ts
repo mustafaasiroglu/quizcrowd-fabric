@@ -35,7 +35,7 @@ beforeAll(async () => {
           return renderToStaticMarkup(h(AuthorEditor, {draft:{...blankDraft(),...patch},onChange:noop,editing:false,anonymousEnabled,readOnly,busy:false,onSave:noop,onBack:noop}));
         }
         export function renderGame(game, host = false) {
-          return renderToStaticMarkup(h(GameScreen,{game,host,guest:false,nickname:'Alex',seconds:10,joinUrl:'https://test.invalid/?quiz=game',busy:false,onControl:noop,onAnswer:noop,onHome:noop,onCopyError:noop}));
+          return renderToStaticMarkup(h(GameScreen,{game,host,guest:false,nickname:'Alex',seconds:10,joinUrl:'https://test.invalid/?quiz=game',busy:false,onControl:noop,onAnswer:noop,onSurveyAnswer:noop,onHome:noop,onCopyError:noop}));
         }
       ` : undefined,
     }],
@@ -154,6 +154,35 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(ui.removeOption(question, 0).correctIndex).toBe(1);
     expect(ui.removeOption(question, 2).correctIndex).toBeNull();
     expect(ui.removeOption({ ...question, correctIndex: null }, 0).correctIndex).toBeNull();
+  });
+  it('offers survey-only Other/multiple settings and normalizes the last option removal', () => {
+    expect(ui.renderEditor()).not.toContain('Allow multiple');
+    expect(ui.renderEditor()).not.toContain('Add Other');
+    expect(ui.renderEditor({ mode: 'survey' })).toContain('Add Other');
+    const question: Question = { text: 'Write feedback', options: ['A'], correctIndex: null, duration: 20, survey: { other: true, allowMultiple: true } };
+    const onlyOther = ui.removeOption(question, 0);
+    expect(onlyOther).toMatchObject({ options: [], correctIndex: null, survey: { other: true, allowMultiple: false } });
+    const editor = ui.renderEditor({ mode: 'survey', questions: [onlyOther] });
+    expect(editor).toContain('Question 1 settings');
+    expect(editor).toMatch(/<input(?=[^>]*aria-label="Question 1 allow multiple")(?=[^>]*disabled="")[^>]*>/);
+    expect(ui.renderEditor({ mode: 'survey', questions: [onlyOther] }, false, true)).toContain('class="author-content" disabled=""');
+  });
+  it('renders accessible survey radios/checkboxes and Other-only input without a visible Other label', () => {
+    const question: Question = { text: 'Feedback', options: ['A', 'B'], correctIndex: null, duration: 20, survey: { other: true, allowMultiple: false } };
+    const normal = ui.renderGame({ ...game, mode: 'survey', phase: 'question', question });
+    expect(normal.match(/type="radio"/g)).toHaveLength(3);
+    expect(normal).toContain('Submit response');
+    const multi = ui.renderGame({ ...game, mode: 'survey', phase: 'question', question: { ...question, survey: { other: true, allowMultiple: true } } });
+    expect(multi.match(/type="checkbox"/g)).toHaveLength(3);
+    expect(multi).toContain('Choose all that apply');
+    const only = ui.renderGame({ ...game, mode: 'survey', phase: 'question', question: { ...question, options: [] } });
+    expect(only).toContain('Your response');
+    expect(only).toContain('maxLength="500"');
+    expect(only).not.toContain('>Other<');
+    expect(only).not.toContain('Your Other response');
+    expect(only).not.toContain('type="radio"');
+    expect(ui.renderGame({ ...game, mode: 'survey', phase: 'question', question, myResponse: { options: [], other: 'Private text' } })).toContain('Answer submitted!');
+    expect(ui.renderGame({ ...game, mode: 'survey', phase: 'reveal', question, distribution: [2, 1], otherCount: 3 })).toContain('3 responses');
   });
 });
 

@@ -143,6 +143,59 @@ retain the normalized setting. No SQL column/table or data migration is needed.
 An update that omits metadata preserves an already stored explicit choice and
 still validates its shared-value consistency rather than silently reinferring it.
 
+### Survey Other and multiple-selection responses
+
+Only Survey questions accept optional `survey: { other, allowMultiple }`
+metadata. Missing metadata means both features are off, preserving legacy
+single-choice surveys. With Other enabled, zero or one normal options are valid;
+otherwise at least two are required. Other-only questions reject
+`allowMultiple: true`. Quiz questions reject survey metadata and retain numeric
+single-choice answers, correctness and scoring.
+
+The answer request supplies exactly one of legacy numeric `option` or typed
+`response: { options: number[], other?: string }`. Presence of `other` explicitly
+selects Other; it is not an unrelated annotation on a normal answer. The server
+rejects duplicate/out-of-range/noninteger indices, unsupported extra fields,
+disabled Other, empty/whitespace text and multiple choices when disabled.
+Text is trimmed, limited to 500 UTF-16 code units, and rejects non-text control
+characters (tab/newline/carriage return remain valid). The request also caps
+raw text at 500 code units. A participant can submit once per question; equal
+retries normalize option order and text without awarding twice.
+
+Persistence stays in **the existing `answers[].option` field** inside
+`Games.Document`, which is SQL `nvarchar(max)` with `ISJSON`, not a separate
+answer column. New Survey responses use a string plus additive
+`format: 'survey-v1'` answer metadata. Example:
+
+```json
+{ "option": "o:0|o:2|t:Written \\| text with \\\\ backslash", "format": "survey-v1" }
+```
+
+Tokens are `o:<option index>` and optional final `t:<Other text>`, separated
+by **`|`**, never semicolons. Within text, `\|` means a literal pipe and `\\`
+means a literal backslash. A stateful decoder preserves escaped separators,
+rejects malformed/unknown formats and never guesses a format from legacy text.
+Options use stable array positions, not label strings; the existing started/
+response edit lock prevents those positions changing after submission.
+The complete encoded field is capped at 2048 UTF-16 code units, comfortably
+within the actual SQL type and the existing 150,000-code-unit Function request
+limit. Legacy unversioned numeric answers remain unchanged and can be retried
+through either the numeric or new single-selection request.
+
+Flags survive save/reopen/duplicate/read-only views and question timing changes
+in the existing JSON. No SQL DDL, migration or registered Function-signature
+change is required. A future authorized release must update Functions and then
+static assets together; the new frontend payload is not compatible with an old
+Function implementation.
+
+Attendee state projects only that caller's `myResponse`. Hosts and other
+attendees receive normal-option counts and an Other count after collection,
+never individual written responses. With multiple selection, the sum of choice
+counts can exceed the number of submitted responses; Other counts as one
+selection. Surveys still have no correctness key, points or scored podium.
+
+### Effective answer duration
+
 The effective `Question.duration` values still drive runtime timeouts and speed
 scoring. The server requires integer metadata and question durations from 5
 through 120 seconds, and rejects shared-mode payloads whose question durations
