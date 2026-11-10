@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { startPreview } from './ui-preview.mjs';
 
 const edge = process.env.QUIZCROWD_TEST_BROWSER ?? 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const directory = resolve('rayfin', '.temp', 'compact-review');
+const directory = resolve('rayfin', '.temp', 'routing-review');
 const profile = resolve('rayfin', '.temp', 'edge-ui-review');
 const report = { kind: 'Local real-browser UI tests with test-only connection fixtures; not live Fabric authorization', checks: [], screenshots: [], contrast: [] };
 let browser, cdp, server;
@@ -60,7 +60,7 @@ async function until(expression) {
   throw new Error(`UI condition did not become true: ${expression}\n${await evaluate('document.body.innerText')}`);
 }
 async function click(text) {
-  const expression = `[...document.querySelectorAll('button')].find(e => e.textContent.trim() === ${JSON.stringify(text)})`;
+  const expression = `[...document.querySelectorAll('button')].find(e => e.textContent.trim() === ${JSON.stringify(text)} || e.getAttribute('aria-label') === ${JSON.stringify(text)})`;
   await pointerClick(expression);
 }
 async function clickWithConfirmation(text, accept) {
@@ -85,7 +85,7 @@ async function screenshot(name) {
   await evaluate('window.scrollTo(0,0)');
   const modal = await evaluate('!!document.querySelector("dialog[open]")');
   const shot = await cdp.call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: !modal }, session);
-  const relative = join('rayfin', '.temp', 'compact-review', `${name}.png`);
+  const relative = join('rayfin', '.temp', 'routing-review', `${name}.png`);
   await writeFile(relative, Buffer.from(shot.data, 'base64'));
   report.screenshots.push(relative);
 }
@@ -96,10 +96,14 @@ async function check(name, run) {
 async function inspectScreen(name) {
   const dialog = await evaluate(`(() => {const e=document.querySelector('dialog[open]');if(!e)return null;const r=e.getBoundingClientRect(),s=getComputedStyle(e);return {center:r.top+r.height/2,expected:innerHeight/2,top:r.top,height:r.height,position:s.position,inset:s.inset,margin:s.margin,scrollY,viewport:visualViewport.height};})()`);
   if (dialog) assert.ok(Math.abs(dialog.center - dialog.expected) <= 1, `${name}: modal must be centered in the actual viewport: ${JSON.stringify(dialog)}`);
-  const layout = await evaluate(`({ width:innerWidth, scroll:document.documentElement.scrollWidth, page:document.querySelector('main').className, unnamed:[...document.querySelectorAll('input,textarea,select')].filter(e => e.getBoundingClientRect().width && !e.labels?.length && !e.getAttribute('aria-label')).map(e=>e.outerHTML), themes:[...document.querySelectorAll('[aria-label="Color theme"] button')].map(e=>e.textContent.trim()) })`);
+  const layout = await evaluate(`({ width:innerWidth, scroll:document.documentElement.scrollWidth, page:document.querySelector('main').className, unnamed:[...document.querySelectorAll('input,textarea,select')].filter(e => e.getBoundingClientRect().width && !e.labels?.length && !e.getAttribute('aria-label')).map(e=>e.outerHTML), themes:[...document.querySelectorAll('[aria-label="Color theme"] button')].map(e=>e.getAttribute('aria-label')) })`);
   assert.ok(layout.scroll <= layout.width + 1, `${name}: horizontal overflow ${layout.scroll}/${layout.width}`);
   assert.deepEqual(layout.unnamed, [], `${name}: unnamed form controls`);
   assert.deepEqual(layout.themes, ['Dark', 'Light']);
+  assert.deepEqual(await evaluate('[...document.querySelectorAll(\'[aria-label="Color theme"] button\')].map(e=>e.textContent)'), ['', '']);
+  const shell = await evaluate('({width:document.querySelector("main").getBoundingClientRect().width, max:getComputedStyle(document.querySelector("main")).maxWidth})');
+  assert.equal(shell.max, '1280px');
+  assert.ok(shell.width <= Math.min(layout.width, 1280), `${name}: shared content width`);
   assert.equal(await evaluate('document.querySelector("footer").textContent'), 'QuizCrowd for Microsoft Fabric');
   const tree = await cdp.call('Accessibility.getFullAXTree', {}, session);
   const unnamed = tree.nodes.filter((node) => !node.ignored && ['button', 'textbox', 'combobox', 'checkbox', 'radio'].includes(node.role?.value) && !node.name?.value);
@@ -128,9 +132,9 @@ async function inspectScreen(name) {
   assert.deepEqual(contrast.failures, [], `${name}: computed text contrast failures ${JSON.stringify(contrast.failures)}`);
 }
 async function navigate(query = '') {
-  await evaluate('if (location.origin === "http://127.0.0.1:5174") sessionStorage.removeItem("quizcrowd-attendee-credential")');
+  await evaluate('if (location.origin === "http://127.0.0.1:5174") {sessionStorage.removeItem("quizcrowd-attendee-credential"); sessionStorage.removeItem("quizcrowd-test-fixture");}');
   await cdp.call('Page.navigate', { url: `http://127.0.0.1:5174/${query}` }, session);
-  await until('!!window.__quizcrowdFixture && !!document.querySelector(".home-screen,.join-card")');
+  await until('!!window.__quizcrowdFixture && !!document.querySelector("main")');
   await pause(250);
 }
 async function phase(value) {
@@ -151,6 +155,15 @@ try {
   server = await startPreview();
   const ready = await fetch('http://127.0.0.1:5174');
   assert.equal(ready.status, 200);
+  await check('built physical screen entry points work without a SPA fallback', async () => {
+    const html = await ready.text();
+    for (const path of ['admin/', 'join/', 'host/create/', 'host/item/', 'host/lobby/', 'host/game/', 'play/', 'library/', 'quizzes/']) {
+      const response = await fetch(`http://127.0.0.1:5174/${path}`);
+      assert.equal(response.status, 200);
+      assert.equal(await response.text(), html);
+    }
+    assert.equal((await fetch('http://127.0.0.1:5174/not-a-built-screen/')).status, 404);
+  });
   browser = spawn(edge, ['--headless=new', '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=9339', `--user-data-dir=${profile}`, '--guest', '--disable-sync', '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' });
   browser.on('error', (error) => console.error(error.message));
   cdp = await connect();
@@ -167,6 +180,15 @@ try {
   await cdp.call('Network.enable', {}, session);
   await cdp.call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }, { name: 'prefers-color-scheme', value: 'light' }] }, session);
 
+  await check('join back does not disable home while its list refresh is pending', async () => {
+    await navigate('?fixture=admin');
+    await click('Join with Code');
+    await evaluate('window.__quizcrowdFixture.defer("list")');
+    await pointerClick('document.querySelector(\'[aria-label="Go back"]\')');
+    assert.equal(await evaluate('document.querySelector(".home-actions .primary").disabled'), false);
+    await evaluate('window.__quizcrowdFixture.release()');
+  });
+
   for (const [size, width, height] of [['desktop', 1440, 1000], ['mobile', 390, 844]]) {
     await cdp.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false }, session);
     for (const theme of ['dark', 'light']) {
@@ -176,10 +198,16 @@ try {
       const label = `${theme}-${size}`;
       await check(`${label}: home layout, theme and accessibility`, async () => {
         assert.equal(await evaluate('document.documentElement.dataset.theme'), theme);
-        assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions button")].map(e=>e.textContent.trim())'), ['New Live Quiz','New Live Survey','Join with Code']);
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions button")].map(e=>e.getAttribute("aria-label"))'), ['New Live Quiz','New Live Survey','Join with Code']);
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions .action-description")].map(e=>e.textContent)'), ['Create a quiz and host it live.','Collect feedback in a live survey.','Enter a game code to take part.']);
+        assert.equal(await evaluate('document.querySelector(".home-actions button").getBoundingClientRect().height >= 116'), true);
         assert.equal(await evaluate('document.body.textContent.includes("Publisher bootstrap identity")'), false);
         assert.equal(await evaluate('document.body.textContent.includes("Your Quizzes")'), false);
         assert.equal(await evaluate('document.querySelector(".session-cover") === null'), true);
+        assert.equal(await evaluate('document.querySelector("#recent-heading").textContent'), 'Recent Items');
+        assert.equal(await evaluate('document.querySelector(".recent-heading p").textContent'), 'Your recent quiz and surveys.');
+        assert.equal(await evaluate('document.querySelector(".session-open-hint")===null'), true);
+        assert.equal(await evaluate('document.querySelector("header").textContent.includes("Publisher controls")'), false);
         assert.equal(await evaluate('document.querySelector(".session-card").getBoundingClientRect().height < 300'), true);
         assert.equal(await evaluate('document.querySelector(".session-metrics").textContent'), '2 Questions0 Responses');
         assert.equal(await evaluate('document.querySelector(".session-metrics").textContent.includes("participants")'), false);
@@ -195,7 +223,33 @@ try {
         await cdp.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] }, session);
         await screenshot(`${label}-home`);
       });
+      await check(`${label}: avatar account menu, keyboard and outside dismissal`, async () => {
+        assert.equal(await evaluate('document.querySelector(".toolbar-actions").textContent.includes("Sign out")'), false);
+        await click('Account menu');
+        await until('document.activeElement?.getAttribute("role")==="menuitem"');
+        assert.equal(await evaluate('document.querySelector(\'[aria-label="Account menu"]\').getAttribute("aria-expanded")'), 'true');
+        await inspectScreen(`${label}-account-menu`); await screenshot(`${label}-account-menu`);
+        await cdp.call('Input.dispatchKeyEvent', {type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27}, session);
+        await cdp.call('Input.dispatchKeyEvent', {type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27}, session);
+        assert.equal(await evaluate('document.activeElement.getAttribute("aria-label")'), 'Account menu');
+        await cdp.call('Input.dispatchKeyEvent', {type:'keyDown',key:' ',code:'Space',windowsVirtualKeyCode:32}, session);
+        await cdp.call('Input.dispatchKeyEvent', {type:'keyUp',key:' ',code:'Space',windowsVirtualKeyCode:32}, session);
+        await until('!!document.querySelector(".account-menu")');
+        await click(theme === 'dark' ? 'Dark' : 'Light');
+        assert.equal(await evaluate('document.querySelector(".account-menu")===null'), true);
+        await click('Account menu');
+        await evaluate('document.activeElement.blur()');
+        assert.equal(await evaluate('document.querySelector(".account-menu")===null'), true);
+        await evaluate('document.querySelector(\'[aria-label="Account menu"]\').focus()');
+        await cdp.call('Input.dispatchKeyEvent', {type:'keyDown',key:'Enter',code:'Enter',text:'\r',windowsVirtualKeyCode:13}, session);
+        await cdp.call('Input.dispatchKeyEvent', {type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13}, session);
+        await until('!!document.querySelector(".account-menu")');
+        await click(theme === 'dark' ? 'Dark' : 'Light');
+      });
       await check(`${label}: legacy custom durations and clickable card keyboard access`, async () => {
+        await pointerClick('document.querySelector(".session-menu summary")'); await click('Open');
+        await until('!!document.querySelector(".author")');
+        await pointerClick('document.querySelector(\'[aria-label="Go back"]\')');
         await evaluate('document.querySelector(".session-open").focus()');
         await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', text: '\r', windowsVirtualKeyCode: 13 }, session);
         await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, session);
@@ -213,6 +267,10 @@ try {
         assert.equal(await evaluate('document.querySelector(".join-card").textContent.includes("View questions")'), false);
         assert.equal(await evaluate('window.__quizcrowdFixture.requests.some(r=>r.command==="preview")'), false);
         await click('Join Game'); await until('!!document.querySelector(".attendee-lobby")');
+        assert.equal(await evaluate('location.pathname'), '/play/');
+        assert.equal(await evaluate('location.search.includes("credential") || location.search.includes("token")'), false);
+        await cdp.call('Page.reload', {}, session); await until('!!document.querySelector(".attendee-lobby")');
+        assert.equal(await evaluate('document.querySelector(".nickname").textContent'), 'Alex');
         await inspectScreen(`${label}-attendee-lobby`);
         await screenshot(`${label}-attendee-lobby`);
         await phase('question'); await inspectScreen(`${label}-attendee-question`); await screenshot(`${label}-attendee-question`);
@@ -279,10 +337,13 @@ try {
       });
       await check(`${label}: host QR, timer, reveal, leaderboard and podium`, async () => {
         assert.equal(await evaluate('document.querySelectorAll(".qr-container svg").length'), 1);
+        assert.equal(await evaluate('location.pathname'), '/host/lobby/');
+        await cdp.call('Page.reload', {}, session); await until('!!document.querySelector(".host-lobby")');
         assert.equal(await evaluate('document.querySelector(".session-code strong").textContent'), '000123');
         assert.equal(await evaluate('new URL(document.querySelector(".join-link a").href).searchParams.get("code")'), '000123');
         await inspectScreen(`${label}-host-lobby`); await screenshot(`${label}-host-lobby`);
         await click('Start Game'); await until('!!document.querySelector(".host-stage.stage-question")');
+        assert.equal(await evaluate('location.pathname'), '/host/game/');
         assert.equal(await evaluate('document.querySelectorAll(".answers button").length'), 0);
         await inspectScreen(`${label}-host-question`); await screenshot(`${label}-host-question`);
         await phase('reveal'); await inspectScreen(`${label}-host-reveal`); await screenshot(`${label}-host-reveal`);
@@ -336,8 +397,10 @@ try {
         assert.equal(await evaluate('document.querySelectorAll(".session-card").length'), 1);
         await pointerClick('document.querySelector(".session-menu summary")'); await clickWithConfirmation('Delete', true);
         await until('!!document.querySelector(".empty-library")');
-        await click('Publisher controls'); await inspectScreen(`${label}-publisher`); await screenshot(`${label}-publisher`);
-        await cdp.call('Page.reload', {}, session); await until('!!document.querySelector(".home-screen")'); await pause(200);
+        await cdp.call('Page.navigate', {url:'http://127.0.0.1:5174/admin/'}, session);
+        await until('!!document.querySelector(".publisher-page")');
+        await inspectScreen(`${label}-publisher`); await screenshot(`${label}-publisher`);
+        await cdp.call('Page.reload', {}, session); await until('!!document.querySelector(".publisher-page")'); await pause(200);
         assert.equal(await evaluate('document.documentElement.dataset.theme'), theme);
         assert.equal(await evaluate('localStorage.getItem("quizcrowd-theme")'), theme);
         assert.deepEqual(await evaluate('Object.keys(localStorage)'), ['quizcrowd-theme']);
@@ -365,6 +428,81 @@ try {
     assert.equal(await evaluate('document.querySelector(\'button[type="submit"]\').disabled'), true);
     await screenshot('light-mobile-public-warning');
   });
+  await check('history back/forward, failed and abandoned pending joins do not lock or redirect home', async () => {
+    await navigate('?fixture=admin');
+    await click('Join with Code');
+    assert.equal(await evaluate('location.pathname'), '/join/');
+    await input('#session-code', '999999'); await click('Next'); await input('#nickname', 'Alex'); await click('Join Game');
+    await until('document.querySelector("[role=alert]")?.textContent.includes("Session not found")');
+    await evaluate('history.back()'); await until('!!document.querySelector("#session-code")');
+    await evaluate('history.back()'); await until('!!document.querySelector(".home-screen")');
+    assert.equal(await evaluate('document.querySelector(".home-actions .primary").disabled'), false);
+    await evaluate('history.forward()'); await until('!!document.querySelector("#session-code")');
+    await evaluate('history.forward()'); await until('!!document.querySelector("#nickname")');
+    await pointerClick('document.querySelector(\'[aria-label="Go back"]\')');
+    await input('#session-code', '000123'); await click('Next'); await input('#nickname', 'Alex');
+    await evaluate('window.__quizcrowdFixture.defer("join")');
+    await click('Join Game');
+    assert.equal(await evaluate('document.querySelector(".join-card button[type=submit]").disabled'), true);
+    await evaluate('history.back()'); await until('!!document.querySelector("#session-code")');
+    await pointerClick('document.querySelector(\'[aria-label="Go back"]\')');
+    await evaluate('window.__quizcrowdFixture.release()'); await pause(250);
+    assert.equal(await evaluate('location.pathname'), '/');
+    assert.equal(await evaluate('sessionStorage.getItem("quizcrowd-attendee-credential")'), null);
+    await click('New Live Survey'); await until('!!document.querySelector(".author")');
+    assert.equal(await evaluate('location.pathname+location.search'), '/host/create/?type=survey');
+    await pointerClick('document.querySelector(\'[aria-label="Go back"]\')');
+    await click('Join with Code'); await input('#session-code', '000123'); await click('Next'); await input('#nickname', 'Alex');
+    await evaluate('window.__quizcrowdFixture.defer("join")'); await click('Join Game');
+    await evaluate('window.__quizcrowdFixture.release("Network temporarily unavailable.")');
+    await until('document.querySelector("[role=alert]")?.textContent.includes("Network temporarily unavailable")');
+    assert.equal(await evaluate('document.querySelector(".join-card button[type=submit]").disabled'), false);
+    await click('Join Game'); await until('!!document.querySelector(".attendee-lobby")');
+  });
+  await check('admin direct route rejects non-admin and signed-out UI, sign out clears attendance and protects the route', async () => {
+    await navigate('admin/?fixture=creator');
+    await until('document.body.textContent.includes("Access denied")');
+    assert.equal(await evaluate('document.querySelector(".publisher-page")===null'), true);
+    assert.equal(await evaluate('window.__quizcrowdFixture.requests.some(r=>r.command==="configure")'), false);
+    await navigate('admin/?fixture=signed-out');
+    await until('!!document.querySelector(".sign-in-card")');
+    assert.equal(await evaluate('document.querySelector(".publisher-page")===null'), true);
+    await click('Sign in with Microsoft Entra'); await until('!!document.querySelector(".publisher-page")');
+    assert.equal(await evaluate('location.pathname'), '/admin/');
+    await pointerClick('document.querySelector(".small-brand")');
+    await click('Join with Code'); await input('#session-code', '000123'); await click('Next'); await input('#nickname', 'Alex');
+    await click('Join Game'); await until('!!document.querySelector(".attendee-lobby")');
+    assert.ok(await evaluate('sessionStorage.getItem("quizcrowd-attendee-credential")'));
+    await cdp.call('Page.navigate', {url:'http://127.0.0.1:5174/admin/'}, session); await until('!!document.querySelector(".publisher-page")');
+    await click('Account menu'); await click('Sign out');
+    await until('!!document.querySelector(".sign-in-card")');
+    assert.equal(await evaluate('sessionStorage.getItem("quizcrowd-attendee-credential")'), null);
+    assert.equal(await evaluate('document.querySelector(".account-avatar")===null'), true);
+    assert.equal(await evaluate('document.querySelector(".publisher-page")===null'), true);
+  });
+  await check('owner deep links preserve intended route through Entra and reject missing, invalid or unowned IDs', async () => {
+    const id = '11111111-2222-4333-8444-555555555555';
+    await navigate(`host/item/?gameId=${id}&fixture=signed-out`);
+    await until('!!document.querySelector(".sign-in-card")');
+    await click('Sign in with Microsoft Entra'); await until('!!document.querySelector(".author")');
+    assert.equal(await evaluate('location.pathname+location.search'), `/host/item/?gameId=${id}`);
+    await cdp.call('Page.reload', {}, session); await until('!!document.querySelector(".author")');
+    assert.deepEqual(await evaluate('[...document.querySelectorAll(".duration input")].map(e=>Number(e.value))'), [60,30]);
+    await evaluate('location.hash="content"'); await pause(150);
+    assert.equal(await evaluate('!!document.querySelector(".author")'), true);
+    await evaluate('history.back()'); await pause(150);
+    assert.equal(await evaluate('!!document.querySelector(".author")'), true);
+    await navigate(`host/item/?gameId=${id}&fixture=admin&owner=other`);
+    await until('document.querySelector("[role=alert]")?.textContent.includes("ownership required")');
+    assert.equal(await evaluate('document.querySelector(".author")===null'), true);
+    await navigate('host/item/?gameId=22222222-2222-4333-8444-555555555555&fixture=admin');
+    await until('document.body.textContent.includes("Session unavailable")');
+    await navigate('host/item/?gameId=invalid');
+    await until('document.body.textContent.includes("Page not found")');
+    assert.equal(await evaluate('window.__quizcrowdFixture.requests.some(r=>r.command==="edit")'), false);
+    await navigate('library/');
+    assert.equal(await evaluate('location.pathname'), '/');
+  });
   await check('Legacy UUID invitations resolve to a six-digit string without displaying the ID', async () => {
     const id = '11111111-2222-4333-8444-555555555555';
     await navigate(`?quiz=${id}`);
@@ -373,13 +511,13 @@ try {
     assert.ok(await evaluate(`window.__quizcrowdFixture.requests.some(r=>r.command==="resolve"&&r.id===${JSON.stringify(id)})`));
   });
   await check('signed-out join preserves Entra gesture and hides host/admin capabilities', async () => {
-    await navigate('?fixture=signed-out&quiz=test-session');
+    await navigate('?fixture=signed-out&quiz=000123');
     assert.equal(await evaluate('!!document.querySelector("#nickname")'), true);
     assert.equal(await evaluate('[...document.querySelectorAll("button")].some(e=>e.textContent==="Join as anonymous guest")'), false);
     await click('Sign in to attend'); await until('[...document.querySelectorAll("button")].some(e=>e.textContent==="Join Game")');
   });
   await check('guest-enabled fixture offers scoped anonymous join without author access', async () => {
-    await navigate('?fixture=signed-out&guests=on&quiz=test-session'); await input('#nickname', 'Guest');
+    await navigate('?fixture=signed-out&guests=on&quiz=000123'); await input('#nickname', 'Guest');
     await click('Join as anonymous guest'); await until('!!document.querySelector(".attendee-lobby")');
     assert.equal(await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="join").asGuest'), true);
   });
@@ -387,8 +525,8 @@ try {
     await cdp.call('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: false }, session);
     await navigate('?fixture=admin'); await inspectScreen('light-320-home');
     assert.equal(await evaluate('getComputedStyle(document.body).animationName'), 'none');
-    assert.equal(await evaluate('!!document.querySelector(".shapes-wrapper")'), false);
-    await navigate('?fixture=admin&quiz=test-session');
+    assert.equal(await evaluate('!!document.querySelector(".workspace-shapes")'), true);
+    await navigate('?fixture=admin&quiz=000123');
     assert.equal(await evaluate('getComputedStyle(document.querySelector(".shapes-wrapper span")).animationName'), 'none');
   });
   await check('explicit theme selection is keyboard-operable without a system mode', async () => {
@@ -396,6 +534,18 @@ try {
     await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 }, session);
     await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 }, session);
     await until('document.documentElement.dataset.theme === "dark"');
+  });
+  await check('home uses active branded motion and reduced motion disables it', async () => {
+    await cdp.call('Emulation.setDeviceMetricsOverride', {width:1440,height:1000,deviceScaleFactor:1,mobile:false}, session);
+    await cdp.call('Emulation.setEmulatedMedia', {features:[{name:'prefers-reduced-motion',value:'no-preference'}]}, session);
+    await navigate('?fixture=admin');
+    assert.equal(await evaluate('getComputedStyle(document.body).animationName'), 'gradient-shift');
+    assert.equal(await evaluate('getComputedStyle(document.querySelector(".workspace-shapes span")).animationName'), 'shapes-fall');
+    assert.equal(await evaluate('getComputedStyle(document.querySelector(".workspace-shapes span:nth-child(2)")).borderColor'), await evaluate('getComputedStyle(document.querySelector(".brand span:last-child")).color'));
+    await pause(250); await screenshot('dark-desktop-animated-home');
+    await cdp.call('Emulation.setEmulatedMedia', {features:[{name:'prefers-reduced-motion',value:'reduce'}]}, session);
+    assert.equal(await evaluate('getComputedStyle(document.body).animationName'), 'none');
+    assert.equal(await evaluate('getComputedStyle(document.querySelector(".workspace-shapes span")).animationName'), 'none');
   });
   await check('unavailable browser preference storage is reported, not silently persisted', async () => {
     await cdp.call('Page.addScriptToEvaluateOnNewDocument', { source: `Object.defineProperty(window,'localStorage',{configurable:true,get(){throw new DOMException('Storage blocked','SecurityError')}});` }, session);

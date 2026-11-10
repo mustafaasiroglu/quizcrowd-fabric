@@ -16,8 +16,8 @@ export function ThemeSwitch() {
   }
   return <div className="theme-control">
     <div className="theme-switch" role="group" aria-label="Color theme">
-      <button type="button" aria-pressed={theme === 'dark'} onClick={() => choose('dark')}><Icon name="moon" />Dark</button>
-      <button type="button" aria-pressed={theme === 'light'} onClick={() => choose('light')}><Icon name="sun" />Light</button>
+      <button type="button" aria-label="Dark" title="Dark" aria-pressed={theme === 'dark'} onClick={() => choose('dark')}><Icon name="moon" /></button>
+      <button type="button" aria-label="Light" title="Light" aria-pressed={theme === 'light'} onClick={() => choose('light')}><Icon name="sun" /></button>
     </div>
     {storageError && <p className="theme-notice" role="status">Browser storage is unavailable. Your theme will reset on reload.</p>}
   </div>;

@@ -7,7 +7,7 @@ export function SessionLibrary({ quizzes, busy, onOpen, onDuplicate, onDelete }:
   onOpen(quiz: QuizSummary): void; onDuplicate(id: string): void; onDelete(id: string): void;
 }) {
   return <section className="recent-sessions" aria-labelledby="recent-heading">
-    <div className="recent-heading"><h2 id="recent-heading">Recent Quiz &amp; Surveys</h2><p className="small muted">Your live sessions, saved in Fabric SQL.</p></div>
+    <div className="recent-heading"><h2 id="recent-heading">Recent Items</h2><p className="small muted">Your recent quiz and surveys.</p></div>
     {!quizzes.length && <div className="card empty-library"><p className="muted">No sessions yet. Create a live quiz or survey to get started.</p></div>}
     <div className="session-grid">{quizzes.map((quiz) => <article className="card session-card" key={quiz.id}>
       <button className="session-open" disabled={busy} aria-label={`${quiz.readOnly ? 'View' : 'Open'} ${quiz.title}`} aria-describedby={`status-${quiz.id} date-${quiz.id} metrics-${quiz.id}`} onClick={() => onOpen(quiz)}>
@@ -15,7 +15,6 @@ export function SessionLibrary({ quizzes, busy, onOpen, onDuplicate, onDelete }:
         <span className="session-title">{quiz.title}</span>
         <span id={`date-${quiz.id}`} className="session-date muted small"><Icon name="calendar" /><span className="sr-only">Created on </span><time dateTime={new Date(quiz.createdAt).toISOString()}>{new Date(quiz.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</time></span>
         <span id={`metrics-${quiz.id}`} className="session-metrics"><span><Icon name="questions" /><span>{quiz.questionCount} Questions</span></span><span><Icon name="responses" /><span>{quiz.responseCount} Responses</span></span></span>
-        <span className="session-open-hint"><Icon name="open" />{quiz.readOnly ? 'View' : 'Open'}</span>
       </button>
       <div className="session-card-actions">
           <details className="session-menu" onKeyDown={(event) => {

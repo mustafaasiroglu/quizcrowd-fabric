@@ -1,4 +1,4 @@
-type Name = 'back' | 'copy' | 'check' | 'close' | 'up' | 'down' | 'trash' | 'settings' | 'clock' | 'sun' | 'moon' | 'users' | 'more' | 'quiz' | 'survey' | 'join' | 'plus' | 'save' | 'play' | 'open' | 'logout' | 'calendar' | 'questions' | 'responses';
+type Name = 'back' | 'copy' | 'check' | 'close' | 'up' | 'down' | 'trash' | 'settings' | 'clock' | 'sun' | 'moon' | 'users' | 'user' | 'more' | 'quiz' | 'survey' | 'join' | 'plus' | 'save' | 'play' | 'open' | 'logout' | 'calendar' | 'questions' | 'responses';
 const paths: Record<Name, string> = {
   back: 'M15 19l-7-7 7-7',
   copy: 'M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z',
@@ -12,6 +12,7 @@ const paths: Record<Name, string> = {
   sun: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8m0-6v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1',
   moon: 'M21 13A9 9 0 0 1 11 3a9 9 0 1 0 10 10z',
   users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m7-18a4 4 0 1 0 0 8 4 4 0 0 0 0-8m8 1a4 4 0 0 1 0 8m5 9v-2a4 4 0 0 0-3-4',
+  user: 'M20 21v-2a6 6 0 0 0-6-6h-4a6 6 0 0 0-6 6v2M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   quiz: 'M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4M7 8h4m-4 4h3m8-10v8m-4-4h8M7 16h6',
   survey: 'M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4M7 8h4m-4 4h3m8-10v8m-4-4h8M7 16l2 2 4-4',

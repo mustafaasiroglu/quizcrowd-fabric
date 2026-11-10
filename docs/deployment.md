@@ -217,7 +217,7 @@ There is no "first user becomes admin" rule. Admin/publisher authority comes
 only from `quizcrowd.Administrators`, provisioned by a trusted SQL administrator.
 Any signed-in creator may manage their own quizzes, not global config.
 Deploying the app does not automatically grant this application-admin role.
-Publisher controls is shown only to an authenticated caller whose verified app
+Publisher controls at `/admin/` is shown only to an authenticated caller whose verified app
 subject is in that table; configuration commands repeat this check on the server.
 
 1. Sign in with the intended administrator account.
@@ -239,7 +239,8 @@ INSERT INTO quizcrowd.Administrators (Subject)
 VALUES (N'<verified-app-caller-subject>');
 ```
 
-Refresh home. **Publisher controls** now appears. Revoking the row removes
+Open `/admin/` after sign-in. **Publisher controls** is available there; it has
+no header button. The URL itself does not grant authorization. Revoking the row removes
 admin authority on the next request. There is no user-editable profile role,
 password, URL parameter, email-domain check or client flag that grants admin.
 
@@ -314,7 +315,7 @@ and verify its warning and all-question preview while signed out.
 
 ## 6. Exact anonymous switch operations
 
-Preferred: sign in as a bootstrapped admin, open **Publisher controls**, and use
+Preferred: sign in as a bootstrapped admin, open `/admin/` (**Publisher controls**), and use
 **Allow anonymous attendees**. The server verifies the caller through DAB and
 then checks Administrators inside the SQL transaction. Changes are audited.
 

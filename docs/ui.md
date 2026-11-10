@@ -41,7 +41,7 @@ DOM changes into the platform page.
 
 | Screen | Behavior |
 | --- | --- |
-| Home | Icon-led New Live Quiz / New Live Survey / Join with Code actions, the only recent-session grid; stacked on mobile |
+| Home | Larger icon/title/description New Live Quiz / New Live Survey / Join with Code action tiles, Recent Items with Your recent quiz and surveys.; stacked on mobile |
 | Join | Narrow card, six-digit numeric string code including leading zeros, separate nickname step; old links resolve; no pre-join preview action |
 | Author | Wide title/questions column with white Light surfaces or dark indigo surfaces; compact question cards, correctness controls, options and reordering |
 | Settings | Right sidebar on desktop, stacked on mobile; Who can respond? first, then answer duration, late joins and answer reveal; no Content Type label/control |
@@ -49,16 +49,68 @@ DOM changes into the platform page.
 | Attendee | Waiting card, full-width timer, colored answer choices, submitted-answer state and server-projected reveal |
 | Host question/results | Centered question card, colored options, timer/answer count, reveal, leaderboard and next/final controls |
 | Finish | Three-step podium in second / first / third order, remaining rankings and replay/home action |
-| Recent cards | Compact keyboard-accessible clickable content, no thumbnail, type/title/sentence-case status/date icon/Questions/Responses; separate native three-dot Open / Duplicate / Delete disclosure |
-| Publisher | Trusted administrator-only guest setting; no bootstrap-identity diagnostic in user UI |
+| Recent cards | Compact keyboard-accessible clickable content, no thumbnail or visible Open/View hint, type/title/sentence-case status/date icon/Questions/Responses; separate native three-dot Open / Duplicate / Delete disclosure |
+| Publisher | Trusted administrator-only guest setting at `/admin/`; no header shortcut or bootstrap-identity diagnostic |
 
 Dark uses the source palette: `#1a1a2e`, `#16213e`, `#0f3460`,
 `#2d1b69`, primary `#6c63ff`, secondary `#ff6584` and accent `#43e97b`.
-Game screens retain the original animated background, falling geometric shapes,
+Home and game screens use the original animated background and falling geometric shapes.
+Home shapes use purple/pink accents, not green. Game screens retain the original
 card geometry and mobile option stacking. Home/editor use purple and pink
 accents with Segoe UI typography. Their status badges, authoring correctness
 selection and controls use no green; the game correctness semantics stay unchanged.
 Reduced-motion preferences disable animations and transitions.
+
+All screens share one 1280px maximum-width shell and responsive horizontal
+padding, including editor/settings, admin and gameplay. Inner join, lobby and
+results cards keep their narrower readable widths within that shell. The editor
+collapses its two columns on smaller screens.
+
+## URLs, history and request lifecycle
+
+| Screen | Canonical URL |
+| --- | --- |
+| Home | `/` |
+| Create quiz / survey | `/host/create/?type=quiz` / `/host/create/?type=survey` |
+| Owner edit / read-only view | `/host/item/?gameId=<UUID>` |
+| Join code / invitation | `/join/`, `/join/?code=000123`, `/join/?gameId=<UUID-or-legacy-alias>` |
+| Host lobby / active session | `/host/lobby/?gameId=<UUID>` / `/host/game/?gameId=<UUID>` |
+| Attendee | `/play/?gameId=<UUID>` |
+| Publisher | `/admin/` |
+
+These are real paths with History API back/forward navigation and reload.
+IDs use named query parameters rather than dynamic path segments: the pinned
+Fabric hosting guide documents directory `indexDocument` handling, but not a
+configurable SPA rewrite/fallback. The Vite build emits a physical `index.html`
+under each screen directory, with root-absolute assets; SDK runtime configuration
+continues loading from `/rayfin.config.json`. Deploy the complete output folder,
+not only its root index and assets. This avoids depending on a catch-all rewrite.
+Authenticated Fabric deep-route behavior still needs a future live release smoke;
+the local browser suite uses built files with **no** SPA fallback.
+
+Root `?quiz=<UUID-or-legacy-alias>` and `?code=000123` links canonicalize to
+Join; resolving a legacy invitation replaces it with the six-digit code.
+`/library/` and `/quizzes/` physical entries redirect in-app to home. Invalid or
+ambiguous route parameters show Page not found; an unknown static path can return
+the host's 404. Missing/unowned owner content shows an explicit server error.
+Route IDs are not credentials. The attendee capability and nickname stay in
+tab-scoped session storage, never the URL; reloading the same tab resumes it.
+A shared attendee URL without that credential offers joining instead.
+
+Private owner/admin routes preserve their intended URL during sign-in, and use
+server ownership/admin checks; an arbitrary `returnTo` is never followed.
+Anonymous and non-admin callers cannot use the admin form, and hiding its
+header shortcut is not authorization. Sign-out clears attendee and private UI state.
+
+The Join/back regression was reproduced with a pending list refresh: old `home()`
+wrapped refresh in global `busy`, disabling every home action. Refresh now has
+its own nonblocking status. Navigation and identity generations invalidate stale
+results immediately, and effect cleanup stops old poll loops. Departed joins,
+draft loads, invitation resolutions and mutations cannot redirect or populate a
+new screen. The SDK invocation has no cancellation parameter in use here:
+ignoring a departed result does not roll back an already accepted server command.
+Legitimate in-screen writes remain disabled while pending, and failures on the
+current screen remain visible.
 
 The light theme uses the same geometry, hierarchy and interactions, with pale
 backgrounds, dark text and readable accent variants. Muted text is more opaque
@@ -116,8 +168,9 @@ This does not remove live countdowns or change survey timed-collection semantics
 ## Exactly two themes
 
 The first visit always starts **dark**, independently of operating-system
-appearance. The toolbar offers only **Dark** and **Light**, using native buttons
-with `aria-pressed`. There is no system/auto mode or URL theme override.
+appearance. The toolbar offers only moon/sun **Dark** and **Light** icon buttons,
+with accessible labels, titles and `aria-pressed`; no continuously visible text.
+There is no system/auto mode or URL theme override.
 
 The selected value is saved under `quizcrowd-theme` in browser local storage.
 An inline, allowlisted bootstrap restores it before React paints, so page
@@ -126,6 +179,13 @@ If browser storage is blocked, the choice still works for the open page and a
 visible status explains that it cannot survive reload. Theme storage contains
 only the preference, never quiz content, answer keys or identity credentials.
 Attendee credentials continue using the existing tab-scoped session storage.
+
+The rightmost account avatar opens a small Sign out menu by pointer, Enter or
+Space. Escape closes it and restores focus; outside pointer/focus closes it
+without stealing focus. The pinned SDK's actual `User` contract supplies
+id/email/role/verification, but no display name or photo URL, so this version uses
+a neutral user SVG rather than inventing initials or showing a subject/token.
+It does not request Graph photo permissions or decode identity tokens.
 
 ## Local verification and review images
 
@@ -141,18 +201,29 @@ two-theme bootstrap tests and the existing SDK/domain/authorization/QR tests.
 The component tests check key secrecy during an open `wait_all` question,
 no-key surveys, public acknowledgement, native answer controls and podium ranks.
 
-`npm run test:ui` starts a loopback-only Vite test server and an isolated,
+`npm run test:ui` builds the frontend with a test-only connection alias, serves
+its physical directory indexes on a loopback-only static server without SPA
+fallback, and starts an isolated,
 headless Edge browser. On Windows it uses the standard Edge installation; set
 `QUIZCROWD_TEST_BROWSER` to another Chromium executable if needed. Ports 5174
 and 9339 must be unused; the script refuses to attach to existing processes.
 It closes its own browser/server and removes its dedicated temporary profile.
 No browser automation package or additional dependency is required.
 
-The test server replaces **only** the frontend connection module with
+The test build replaces **only** the frontend connection module with
 `tests/fixtures/rayfin-client.mjs`. It never loads `.env` files or the Fabric
 development plugin. The production build does not use this fixture or provide
 a mock/fallback mode. The browser test asserts that no non-loopback requests
 occur. These are **local UI checks, not new live Fabric authorization results**.
+
+For a manual, synthetic-data-only preview on `http://127.0.0.1:5174`, run
+`node tests/ui-preview.mjs` with Node.js 24 and leave that process open.
+No Fabric sign-in is required: the test-only connection starts as a simulated
+administrator. Its quiz, answer, settings and session data are demo fixtures
+stored in that browser tab, not Fabric SQL. This is not a production backend
+or authentication test. Use the supported Rayfin dev flow in deployment.md for
+real runtime integration; do not enable new cloud redirects/permissions merely
+to review layout.
 
 The browser matrix covers both themes at 1440px and 390px, with a 320px
 overflow check. It uses actual pointer/keyboard events for navigation, theme
@@ -166,43 +237,48 @@ WCAG certification or a screen-reader audit.
 The machine-readable report records the current scenario, screenshot and
 screen-state totals. The checks include read-only authoring, leading-zero codes,
 legacy invitation resolution, native menu keyboard handling, duplicate, delete
-confirmation/cancellation and publisher visibility, alongside existing game flows.
+confirmation/cancellation, avatar-menu keyboard/outside dismissal, physical
+deep-route reloads, native back/forward, pending/failed/abandoned joins and
+admin/owner guard presentation alongside existing game flows.
 
 Real browser captures and the report are saved under the ignored directory
-`rayfin\.temp\compact-review\`. They use synthetic test content:
+`rayfin\.temp\routing-review\`. They use synthetic test content:
 
 | Image suffix | Example exact repository-relative path |
 | --- | --- |
-| Home | `rayfin\.temp\compact-review\dark-desktop-home.png` |
-| Join | `rayfin\.temp\compact-review\light-mobile-join.png` |
-| Editor | `rayfin\.temp\compact-review\dark-desktop-author.png` |
-| Same for all | `rayfin\.temp\compact-review\dark-desktop-settings.png` |
-| Custom durations | `rayfin\.temp\compact-review\light-mobile-custom-duration.png` |
-| Equal custom durations reopened | `rayfin\.temp\compact-review\dark-desktop-equal-custom-reopen.png` |
-| QR lobby | `rayfin\.temp\compact-review\light-mobile-host-lobby.png` |
-| Host question | `rayfin\.temp\compact-review\dark-desktop-host-question.png` |
-| Reveal | `rayfin\.temp\compact-review\light-desktop-host-reveal.png` |
-| Leaderboard | `rayfin\.temp\compact-review\dark-mobile-host-leaderboard.png` |
-| Podium | `rayfin\.temp\compact-review\dark-mobile-host-finished.png` |
-| Attendee waiting | `rayfin\.temp\compact-review\light-desktop-attendee-lobby.png` |
-| Attendee question | `rayfin\.temp\compact-review\dark-mobile-attendee-question.png` |
-| Submitted answer | `rayfin\.temp\compact-review\light-mobile-attendee-submitted.png` |
-| Recent cards | `rayfin\.temp\compact-review\dark-desktop-recent.png` |
-| Read-only | `rayfin\.temp\compact-review\light-desktop-readonly.png` |
-| Three-dot menu | `rayfin\.temp\compact-review\dark-mobile-menu.png` |
-| Delete-question dialog | `rayfin\.temp\compact-review\light-mobile-delete-dialog.png` |
-| Publisher | `rayfin\.temp\compact-review\light-mobile-publisher.png` |
-| Survey completion | `rayfin\.temp\compact-review\light-mobile-survey-finished.png` |
-| Public warning | `rayfin\.temp\compact-review\light-mobile-public-warning.png` |
-| Full machine-readable results | `rayfin\.temp\compact-review\results.json` |
+| Home | `rayfin\.temp\routing-review\dark-desktop-home.png` |
+| Home with motion enabled | `rayfin\.temp\routing-review\dark-desktop-animated-home.png` |
+| Light home | `rayfin\.temp\routing-review\light-desktop-home.png` |
+| Account menu | `rayfin\.temp\routing-review\dark-mobile-account-menu.png` |
+| Join | `rayfin\.temp\routing-review\light-mobile-join.png` |
+| Editor | `rayfin\.temp\routing-review\dark-desktop-author.png` |
+| Same for all | `rayfin\.temp\routing-review\dark-desktop-settings.png` |
+| Custom durations | `rayfin\.temp\routing-review\light-mobile-custom-duration.png` |
+| Equal custom durations reopened | `rayfin\.temp\routing-review\dark-desktop-equal-custom-reopen.png` |
+| QR lobby | `rayfin\.temp\routing-review\light-mobile-host-lobby.png` |
+| Host question | `rayfin\.temp\routing-review\dark-desktop-host-question.png` |
+| Reveal | `rayfin\.temp\routing-review\light-desktop-host-reveal.png` |
+| Leaderboard | `rayfin\.temp\routing-review\dark-mobile-host-leaderboard.png` |
+| Podium | `rayfin\.temp\routing-review\dark-mobile-host-finished.png` |
+| Attendee waiting | `rayfin\.temp\routing-review\light-desktop-attendee-lobby.png` |
+| Attendee question | `rayfin\.temp\routing-review\dark-mobile-attendee-question.png` |
+| Submitted answer | `rayfin\.temp\routing-review\light-mobile-attendee-submitted.png` |
+| Recent cards | `rayfin\.temp\routing-review\dark-desktop-recent.png` |
+| Read-only | `rayfin\.temp\routing-review\light-desktop-readonly.png` |
+| Three-dot menu | `rayfin\.temp\routing-review\dark-mobile-menu.png` |
+| Delete-question dialog | `rayfin\.temp\routing-review\light-mobile-delete-dialog.png` |
+| Publisher | `rayfin\.temp\routing-review\light-mobile-publisher.png` |
+| Survey completion | `rayfin\.temp\routing-review\light-mobile-survey-finished.png` |
+| Public warning | `rayfin\.temp\routing-review\light-mobile-public-warning.png` |
+| Full machine-readable results | `rayfin\.temp\routing-review\results.json` |
 
 The common capture suffixes exist for every dark/light and
 desktop/mobile combination. The report lists every exact path. Screenshot
 review and source-derived layout assertions do not establish pixel-perfect
 equivalence against a running original app: the original was not executed.
 
-This revision requires updated Functions and frontend publication, but no
-additional SQL schema migration. It does not change tenant policy, hosting protection,
-the guest switch or trusted administrator membership. Function signatures remain
-unchanged. Deployment success and SQL readback are distinct from an authenticated
-live browser smoke test; local fixture screenshots do not prove the latter.
+The routing/header revision changes frontend source and its build artifacts only;
+it has not been published to Fabric. No Function, SQL schema, tenant policy,
+hosting protection, guest switch or trusted administrator membership changed.
+Deployment success and SQL readback are distinct from an authenticated live
+browser smoke test; local fixture screenshots do not prove either.
