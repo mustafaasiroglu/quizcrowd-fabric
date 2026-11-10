@@ -4,6 +4,7 @@ import { getAnswerDuration, getSurveyQuestionType, MAX_OPTIONS, MAX_TITLE_LENGTH
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 import { DurationInput } from './DurationInput';
+import { QuestionTypePicker } from './QuestionTypePicker';
 
 export const blankQuestion = (duration = 20): Question => ({ text: '', options: ['', '', '', ''], correctIndex: null, duration });
 export const blankDraft = (mode: Draft['mode'] = 'quiz'): Draft => ({
@@ -71,14 +72,7 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
             </div>}
             <div className="question-actions">
               {timing.mode === 'custom' && <DurationInput label={`Question ${i + 1} duration in seconds`} value={q.duration} onChange={duration => updateQuestion(i, { duration })} />}
-              {draft.mode === 'survey' && <select className="question-type" name={`survey-type-${i}`} aria-label={`Question ${i + 1} response type`} value={getSurveyQuestionType(q)} onChange={event => {
-                const type = event.currentTarget.value;
-                if (type !== 'single' && type !== 'multiple' && type !== 'text') throw new Error('Unsupported survey response type.');
-                changeSurveyType(i, type);
-              }}>
-                {([['single', 'Single Select'], ['multiple', 'Multiple Select'], ['text', 'Free Text']] as const).map(([type, label]) =>
-                  <option key={type} value={type}>{label}</option>)}
-              </select>}
+              {draft.mode === 'survey' && <QuestionTypePicker number={i + 1} value={getSurveyQuestionType(q)} disabled={readOnly || busy} onChange={type => changeSurveyType(i, type)} />}
               {!readOnly && draft.questions.length > 1 && <button type="button" className="icon-button delete-action" aria-label={`Remove question ${i + 1}`} onClick={() => setRemoving(i)}><Icon name="trash" /></button>}
             </div>
           </div>
@@ -86,14 +80,15 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
           <div className="option-editor-grid">{q.options.map((option, k) => <div className={`option-editor ${draft.mode === 'quiz' && q.correctIndex === k ? 'is-correct' : ''}`} key={k}>
             {draft.mode === 'quiz' && <input type="radio" name={`correct-${i}`} required aria-label={`Question ${i + 1}, correct option ${k + 1}`} checked={q.correctIndex === k} onChange={() => updateQuestion(i, { correctIndex: k })} />}
             <label className="sr-only" htmlFor={`option-${i}-${k}`}>Question {i + 1}, option {k + 1}</label><input id={`option-${i}-${k}`} placeholder={`Option ${k + 1}`} required maxLength={300} value={option} onChange={(e) => updateQuestion(i, { options: q.options.map((o, n) => n === k ? e.target.value : o) })} />
-            {!readOnly && (q.options.length > 2 || (draft.mode === 'survey' && getSurveyQuestionType(q) === 'multiple' && q.survey?.other)) && <button type="button" className="icon-button delete-action remove-option" aria-label={`Remove question ${i + 1} option ${k + 1}`} onClick={() => updateQuestion(i, removeOption(q, k))}><Icon name="trash" /></button>}
+            {!readOnly && (q.options.length > 2 || (draft.mode === 'survey' && q.survey?.other)) && <button type="button" className="icon-button delete-action remove-option" aria-label={`Remove question ${i + 1} option ${k + 1}`} onClick={() => updateQuestion(i, removeOption(q, k))}><Icon name="trash" /></button>}
           </div>)}
-            {draft.mode === 'survey' && q.survey?.other && q.options.length > 0 && (getSurveyQuestionType(q) === 'multiple' || readOnly) && <div className="option-editor other-option"><span>Other <span className="small muted">(written response)</span></span>{!readOnly && <button type="button" className="icon-button delete-action" aria-label={`Remove question ${i + 1} Other`} disabled={q.options.length < 2} onClick={() => updateQuestion(i, { survey: { other: false, allowMultiple: true } })}><Icon name="trash" /></button>}</div>}
+            {draft.mode === 'survey' && q.survey?.other && q.options.length > 0 && <div className="option-editor other-option"><span>Other <span className="small muted">(written response)</span></span>{!readOnly && <button type="button" className="icon-button delete-action" aria-label={`Remove question ${i + 1} Other`} disabled={q.options.length < 2} onClick={() => updateQuestion(i, { survey: { other: false, allowMultiple: !!q.survey?.allowMultiple } })}><Icon name="trash" /></button>}</div>}
           </div>
           {draft.mode === 'survey' && getSurveyQuestionType(q) === 'text' && <p className="muted small">Respondents can write a free-text answer.</p>}
-          {draft.mode === 'survey' && getSurveyQuestionType(q) === 'single' && q.survey?.other && !readOnly && <p className="muted small">This legacy question includes Other. Choose Multiple Select to keep it when saving; Single Select saves normal choices only.</p>}
-          {!readOnly && (draft.mode === 'quiz' || getSurveyQuestionType(q) !== 'text') && <button type="button" className="text-button" disabled={q.options.length >= MAX_OPTIONS} onClick={() => updateQuestion(i, { options: [...q.options, ''] })}><Icon name="plus" />{q.options.length >= MAX_OPTIONS ? '10 options maximum' : 'Add option'}</button>}
-          {!readOnly && draft.mode === 'survey' && getSurveyQuestionType(q) === 'multiple' && !q.survey?.other && <button type="button" className="text-button add-other" aria-label={`Add Other to question ${i + 1}`} onClick={() => updateQuestion(i, { survey: { other: true, allowMultiple: true } })}><Icon name="plus" />Add Other</button>}
+          {!readOnly && (draft.mode === 'quiz' || getSurveyQuestionType(q) !== 'text') && <div className="option-actions">
+            <button type="button" className="text-button" disabled={q.options.length >= MAX_OPTIONS} onClick={() => updateQuestion(i, { options: [...q.options, ''] })}><Icon name="plus" />{q.options.length >= MAX_OPTIONS ? '10 options maximum' : 'Add option'}</button>
+            {draft.mode === 'survey' && !q.survey?.other && <button type="button" className="text-button add-other" aria-label={`Add Other to question ${i + 1}`} onClick={() => updateQuestion(i, { survey: { other: true, allowMultiple: getSurveyQuestionType(q) === 'multiple' } })}><Icon name="plus" />Add Other</button>}
+          </div>}
           {draft.mode === 'quiz' && <p className="muted small option-hint">Select the circle beside the correct answer.</p>}
         </fieldset>)}</div>
         {!readOnly && <div className="editor-actions"><button type="button" className="outline-primary" disabled={draft.questions.length >= 40} onClick={() => {
@@ -113,8 +108,8 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
             <div className="shared-duration-choice"><label className="check"><input type="radio" name="answer-duration" value="same" checked={timing.mode === 'same'} onChange={() => setDuration('same')} />Same for all questions</label>
               {timing.mode === 'same' && <DurationInput id="shared-duration" label="Duration in seconds for all questions" value={timing.seconds} onChange={seconds => setDuration('same', seconds)} />}
             </div>
-            <label className="check custom-duration-choice"><input type="radio" name="answer-duration" value="custom" aria-describedby={timing.mode === 'custom' ? 'custom-duration-help' : undefined} checked={timing.mode === 'custom'} onChange={() => setDuration('custom')} /><span>Customize per question</span></label>
-            {timing.mode === 'custom' && <p id="custom-duration-help" className="small muted option-help">Set the answer time at the top of each question.</p>}
+            <label className="check custom-duration-choice"><input type="radio" name="answer-duration" value="custom" aria-describedby={timing.mode === 'custom' ? 'custom-duration-help' : undefined} checked={timing.mode === 'custom'} onChange={() => setDuration('custom')} /><span>Customize each question</span></label>
+            {timing.mode === 'custom' && <p id="custom-duration-help" className="small muted option-help">Set seperately on each question.</p>}
           </fieldset></div>
           <div className="settings-group"><fieldset className="late-join-settings"><legend>Allow late joins?</legend>
             <label className="check"><input type="radio" name="late-join" value="deny" checked={!draft.lateJoin} onChange={() => onChange({ ...draft, lateJoin: false })} />Don&apos;t allow late join</label>

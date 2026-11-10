@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { copyTitle, getAnswerDuration, MAX_OPTIONS, MAX_SURVEY_TEXT_LENGTH } from '@rayfin-app/shared';
 import type { Store } from './sql-store.js';
 import {
-  answer, control, createGame, Denied, Conflict, draftSchema, authoringDraftSchema, join, own, preview,
+  answer, control, createGame, Denied, Conflict, draftSchema, join, own, preview,
   settingsView, signed, view, visibilityAllowed, authorDraft, guestAllowed, readOnly, summary,
 } from './domain.js';
 
@@ -18,7 +18,7 @@ const requestSchema = z.object({
   questionIndex: z.number().int().min(0).max(39).optional(),
   option: z.number().int().min(0).max(MAX_OPTIONS - 1).optional(),
   response: z.object({ options: z.array(z.number().int().min(0).max(MAX_OPTIONS - 1)).max(MAX_OPTIONS), other: z.string().max(MAX_SURVEY_TEXT_LENGTH).optional() }).strict().optional(),
-  draft: authoringDraftSchema.optional(),
+  draft: draftSchema.optional(),
 }).strict();
 
 export async function execute(

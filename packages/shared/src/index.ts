@@ -21,7 +21,7 @@ export function setSurveyQuestionType(question: Question, type: SurveyQuestionTy
   const options = [...previousOptions];
   while (options.length < 2) options.push('');
   return { ...question, options: type === 'text' ? [] : options, correctIndex: null,
-    survey: { other: type === 'text' || (type === 'multiple' && !!question.survey?.other), allowMultiple: type === 'multiple' } };
+    survey: { other: type === 'text' || !!question.survey?.other, allowMultiple: type === 'multiple' } };
 }
 export interface SurveyResponse { options: number[]; other?: string }
 export type AnswerSubmission = { option: number; response?: never } | { response: SurveyResponse; option?: never };
@@ -81,12 +81,6 @@ export interface Draft {
   showAnswer: 'wait_all' | 'after_response' | 'never';
   questions: Question[];
   answerDuration?: AnswerDuration;
-}
-export function normalizeSurveyAuthoring(draft: Draft): Draft {
-  if (draft.mode !== 'survey') return draft;
-  return { ...draft, questions: draft.questions.map(question =>
-    getSurveyQuestionType(question) === 'single' && question.survey?.other
-      ? { ...question, survey: { other: false, allowMultiple: false } } : question) };
 }
 export function getAnswerDuration(draft: Pick<Draft, 'questions' | 'answerDuration'>): AnswerDuration {
   if (draft.answerDuration) return draft.answerDuration;

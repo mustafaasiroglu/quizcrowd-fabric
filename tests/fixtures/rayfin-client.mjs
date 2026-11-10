@@ -29,6 +29,7 @@ let deleted = false;
 let currentCode = '000123';
 let createdAt = stored?.createdAt ?? 1794214800000;
 let phase = 'lobby';
+let questionStartedAt = 0;
 let questionIndex = 0;
 let myOption;
 let myResponse;
@@ -46,7 +47,7 @@ if (!stored && example?.endsWith('-ten')) {
   currentDraft = { ...draft, title: example === 'survey-multiple' ? 'Live Survey demo - multiple and Other' : 'Live Survey demo - written feedback',
     mode: 'survey', lateJoin: true, questions: [{ text: 'What should we include in our next event?',
       options: example === 'survey-other-only' ? [] : ['Product sessions', 'Workshops'],
-      correctIndex: null, duration: 120, survey: { other: example !== 'survey-single', allowMultiple: example === 'survey-multiple' } }] };
+      correctIndex: null, duration: 120, survey: { other: true, allowMultiple: example === 'survey-multiple' } }] };
   phase = 'question';
 }
 if (stored) {
@@ -54,12 +55,14 @@ if (stored) {
   phase = stored.phase; questionIndex = stored.questionIndex; myOption = stored.myOption; myResponse = stored.myResponse; version = stored.version;
   players.splice(0, players.length, ...stored.players);
 }
+questionStartedAt = stored?.questionStartedAt ?? (phase === 'question' ? Date.now() - 15000 : 0);
 function snapshot() {
-  return structuredClone({ currentDraft, deleted, currentCode, createdAt, phase, questionIndex, myOption, myResponse, version, players });
+  return structuredClone({ currentDraft, deleted, currentCode, createdAt, phase, questionStartedAt, questionIndex, myOption, myResponse, version, players });
 }
 function activate(id, record) {
   activeId = id;
   ({ currentDraft, deleted, currentCode, createdAt, phase, questionIndex, myOption, myResponse, version } = structuredClone(record));
+  questionStartedAt = record.questionStartedAt ?? (phase === 'question' ? Date.now() - 15000 : 0);
   players.splice(0, players.length, ...record.players);
 }
 function persist() {
@@ -86,7 +89,7 @@ function view(attendee) {
     id: activeId, code: currentCode, title: currentDraft.title, mode: currentDraft.mode,
     phase, version, questionIndex, totalQuestions: currentDraft.questions.length, serverNow: Date.now(),
     players, answerCount: myOption === undefined && myResponse === undefined ? 0 : 1,
-    ...(phase === 'question' || phase === 'reveal' ? { question: { text: q.text, options: q.options, duration: q.duration, survey: q.survey }, questionStartedAt: Date.now() - 15000 } : {}),
+    ...(phase === 'question' || phase === 'reveal' ? { question: { text: q.text, options: q.options, duration: q.duration, survey: q.survey }, questionStartedAt } : {}),
     ...(attendee && myOption !== undefined ? { myOption } : {}),
     ...(attendee && myResponse !== undefined ? { myResponse: structuredClone(myResponse) } : {}),
     ...(currentDraft.mode === 'quiz' && (phase === 'reveal' || (phase === 'question' && attendee && myOption !== undefined && currentDraft.showAnswer === 'after_response')) ? {
@@ -105,7 +108,7 @@ window.__quizcrowdFixture = {
     deferred.set(command, promise);
     this.release = (error) => { deferred.delete(command); release(error); };
   },
-  phase(next) { phase = next; version++; },
+  phase(next) { if (next === 'question' && phase !== 'question') questionStartedAt = Date.now() - 15000; phase = next; version++; },
   revealMode(value) { currentDraft.showAnswer = value; },
 };
 function summary(id = activeId, record = snapshot()) {
@@ -157,14 +160,14 @@ export async function call(_connection, request, token = '', asGuest = false) {
       const code = nextDemoCode(); // Predictable test-only suffix; production uses Node crypto.randomInt.
       currentDraft = { ...structuredClone(currentDraft), title: copyTitle(currentDraft.title), visibility: 'internal', publicAcknowledged: false };
       activeId = crypto.randomUUID(); currentCode = code; createdAt = Date.now();
-      phase = 'lobby'; questionIndex = -1; version = 0; myOption = undefined; myResponse = undefined; deleted = false;
+      phase = 'lobby'; questionStartedAt = 0; questionIndex = -1; version = 0; myOption = undefined; myResponse = undefined; deleted = false;
       players.splice(0);
       return { id: activeId, code: currentCode };
     }
     case 'create':
       if (!authenticated) throw new Error('Sign in to create.');
       currentCode = nextDemoCode();
-      currentDraft = structuredClone(request.draft); phase = 'lobby'; questionIndex = 0; myOption = undefined; myResponse = undefined; deleted = false;
+      currentDraft = structuredClone(request.draft); phase = 'lobby'; questionStartedAt = 0; questionIndex = 0; myOption = undefined; myResponse = undefined; deleted = false;
       return { id: activeId, code: currentCode };
     case 'host':
       if (!authenticated) throw new Error('Host ownership required.');
@@ -180,9 +183,9 @@ export async function call(_connection, request, token = '', asGuest = false) {
       return { id: activeId, token: 'test-only-attendee-credential' };
     case 'control':
       if (!authenticated || request.version !== version) throw new Error('Host version or identity rejected.');
-      if (request.action === 'start') { phase = 'question'; questionIndex = 0; }
+      if (request.action === 'start') { phase = 'question'; questionIndex = 0; questionStartedAt = Date.now(); }
       else if (questionIndex + 1 === currentDraft.questions.length) phase = 'finished';
-      else { questionIndex++; phase = 'question'; }
+      else { questionIndex++; phase = 'question'; questionStartedAt = Date.now(); }
       version++; myOption = undefined; myResponse = undefined;
       return undefined;
     case 'answer':

@@ -81,6 +81,39 @@ async function pointerClick(expression) {
 async function input(selector, value) {
   await evaluate(`(() => { const element=document.querySelector(${JSON.stringify(selector)}); if (!element) throw new Error('Input missing'); const proto=element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto,'value').set.call(element,${JSON.stringify(value)}); element.dispatchEvent(new Event('input',{bubbles:true})); element.dispatchEvent(new Event('change',{bubbles:true})); })()`);
 }
+async function chooseSurveyType(value) {
+  if (!await evaluate('document.querySelector(".question-type").getAttribute("aria-expanded")==="true"')) {
+    await pointerClick('document.querySelector(".question-type")');
+  }
+  await until('!!document.querySelector(".question-type-menu")');
+  await pointerClick(`document.querySelector('.question-type-menu [value="${value}"]')`);
+  assert.equal(await evaluate('document.querySelector(".question-type").getAttribute("aria-expanded")'),'false');
+  assert.equal(await evaluate('document.activeElement.classList.contains("question-type")'),true);
+}
+async function assertSmoothTimer(name) {
+  const measured=await evaluate(`(async () => {
+    const fill=document.querySelector('.timer-fill'),timer=document.querySelector('.timer'),track=document.querySelector('.timer-track');
+    let labels=0,frames=0;
+    const labelObserver=new MutationObserver(()=>labels++),frameObserver=new MutationObserver(()=>frames++);
+    labelObserver.observe(timer,{attributes:true,attributeFilter:['aria-label']});
+    frameObserver.observe(fill,{attributes:true,attributeFilter:['style']});
+    const points=[];
+    for(let i=0;i<10;i++){points.push({time:performance.now(),ratio:new DOMMatrixReadOnly(getComputedStyle(fill).transform).a});await new Promise(resolve=>setTimeout(resolve,180));}
+    labelObserver.disconnect();frameObserver.disconnect();
+    return {points,labels,frames,duration:Number(track.getAttribute('aria-valuemax')),sameNode:document.querySelector('.timer-fill')===fill};
+  })()`);
+  (report.timers??=[]).push({name,...measured});
+  assert.equal(measured.sameNode,true);
+  assert.ok(measured.frames>=10,`${name}: continuous frame paints`);
+  assert.ok(measured.labels<=3,`${name}: seconds label is not rendered at frame rate`);
+  assert.equal(new Set(measured.points.map(point=>point.ratio.toFixed(5))).size,10);
+  for(let i=1;i<measured.points.length;i++){
+    const previous=measured.points[i-1],next=measured.points[i],delta=previous.ratio-next.ratio;
+    assert.ok(delta>0,`${name}: progress must decrease between subsecond samples and across polls`);
+    const expected=(next.time-previous.time)/(measured.duration*1000);
+    assert.ok(Math.abs(delta-expected)<64/(measured.duration*1000),`${name}: monotonic server-aligned progress ${JSON.stringify({delta,expected,duration:measured.duration,points:measured.points})}`);
+  }
+}
 async function assertFilledForeground(selector) {
   const { root } = await cdp.call('DOM.getDocument', {}, session);
   const { nodeId } = await cdp.call('DOM.querySelector', { nodeId: root.nodeId, selector }, session);
@@ -237,6 +270,8 @@ try {
   await check('join back does not disable home while its list refresh is pending', async () => {
     await navigate('?fixture=admin');
     await click('Join with Code');
+    assert.equal(await evaluate('document.querySelector(".page-heading h1").textContent'),'Join with Code');
+    assert.equal(await evaluate('document.querySelector(\'label[for="session-code"]\').textContent'),'Session Code');
     await evaluate('window.__quizcrowdFixture.defer("list")');
     await pointerClick('document.querySelector(\'[aria-label="Go back"]\')');
     assert.equal(await evaluate('document.querySelector(".home-actions .quiz-action").disabled'), false);
@@ -310,25 +345,60 @@ try {
         await screenshot(`${theme}-${size}-settings-gear-admin`);
         assert.equal(await evaluate('document.querySelectorAll(".publisher-page input[type=checkbox]").length'), 1);
       });
-      await check(`${theme}-${size}: question controls align right with a direct Survey type select`,async()=>{
+      await check(`${theme}-${size}: question controls align right with an accessible Survey type picker`,async()=>{
         for(const mode of ['quiz','survey']) {
           await navigate();await click(theme==='dark'?'Dark':'Light');await click(mode==='quiz'?'New Live Quiz':'New Live Survey');
           assert.equal(await evaluate('document.querySelector(".question-heading .duration")===null'),true);
           await pointerClick('document.querySelector(\'input[name="answer-duration"][value="custom"]\')');
-          const alignment=await evaluate(`(() => {const h=document.querySelector('.question-heading'),a=h.querySelector('.question-actions'),t=a.querySelector('.duration');return {right:Math.abs(h.getBoundingClientRect().right-a.getBoundingClientRect().right),timerRight:Math.abs(h.getBoundingClientRect().right-t.getBoundingClientRect().right),selects:h.querySelectorAll('select').length};})()`);
+          const alignment=await evaluate(`(() => {const h=document.querySelector('.question-heading'),a=h.querySelector('.question-actions'),t=a.querySelector('.duration');return {right:Math.abs(h.getBoundingClientRect().right-a.getBoundingClientRect().right),timerRight:Math.abs(h.getBoundingClientRect().right-t.getBoundingClientRect().right),selects:h.querySelectorAll('.question-type').length};})()`);
           assert.ok(alignment.right<=1);
           assert.equal(alignment.selects,mode==='survey'?1:0);
           if(mode==='quiz')assert.ok(alignment.timerRight<=1,'single-question Quiz timer must align to the right');
           else {
-            assert.deepEqual(await evaluate('[...document.querySelector(".question-type").options].map(e=>e.textContent)'),['Single Select','Multiple Select','Free Text']);
+            assert.equal(await evaluate('getComputedStyle(document.querySelector(".question-type")).borderWidth'),'0px');
+            assert.equal(await evaluate('getComputedStyle(document.querySelector(".question-type")).color'),await evaluate('getComputedStyle(document.querySelector(".question-heading h2")).color'));
+            const {root}=await cdp.call('DOM.getDocument',{},session);
+            const {nodeId}=await cdp.call('DOM.querySelector',{nodeId:root.nodeId,selector:'.question-type'},session);
+            await cdp.call('CSS.forcePseudoState',{nodeId,forcedPseudoClasses:['hover']},session);
+            assert.equal(await evaluate('getComputedStyle(document.querySelector(".question-type")).color'),await evaluate('getComputedStyle(document.querySelector(".brand-wordmark > span")).color'));
+            assert.equal(await evaluate('getComputedStyle(document.querySelector(".question-type svg")).stroke'),await evaluate('getComputedStyle(document.querySelector(".question-type")).color'));
+            await cdp.call('CSS.forcePseudoState',{nodeId,forcedPseudoClasses:[]},session);
             await evaluate('document.querySelector(".question-heading .duration input").focus()');
             await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9},session);
             await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9},session);
             assert.equal(await evaluate('document.activeElement.classList.contains("question-type")'),true);
-            assert.equal(await evaluate('document.activeElement.getAttribute("aria-label")'),'Question 1 response type');
+            assert.equal(await evaluate('document.activeElement.getAttribute("aria-label")'),'Question 1 response type: Single Select');
             await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40},session);
             await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40},session);
+            assert.deepEqual(await evaluate('[...document.querySelectorAll(".question-type-menu button")].map(e=>e.textContent)'),['Single Select','Multiple Select','Free Text']);
+            assert.equal(await evaluate('document.activeElement.getAttribute("aria-checked")'),'true');
+            await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40},session);
+            await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40},session);
+            await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',text:'\r',windowsVirtualKeyCode:13},session);
+            await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13},session);
             assert.equal(await evaluate('document.querySelector(".question-type").value'),'multiple');
+            await pointerClick('document.querySelector(".question-type")');
+            assert.equal(await evaluate('(() => {const r=document.querySelector(".question-type-menu").getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight})()'),true);
+            await inspectScreen(`${theme}-${size}-question-type-menu`);await screenshot(`${theme}-${size}-question-type-menu`);
+            await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27},session);
+            await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27},session);
+            assert.equal(await evaluate('document.activeElement.classList.contains("question-type")'),true);
+            await pointerClick('document.querySelector(".question-type")');
+            await pointerClick('document.querySelector("#question-0")');
+            assert.equal(await evaluate('document.querySelector(".question-type-menu")===null'),true);
+            await evaluate('document.querySelector(".question-type").focus()');
+            await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:' ',code:'Space',windowsVirtualKeyCode:32},session);
+            await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:' ',code:'Space',windowsVirtualKeyCode:32},session);
+            await until('!!document.querySelector(".question-type-menu")');
+            for(const [key,code,value] of [['End',35,'text'],['Home',36,'single']]){
+              await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key,code:key,windowsVirtualKeyCode:code},session);
+              await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key,code:key,windowsVirtualKeyCode:code},session);
+              assert.equal(await evaluate('document.activeElement.value'),value);
+            }
+            await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9,modifiers:8},session);
+            await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9},session);
+            assert.equal(await evaluate('document.querySelector(".question-type-menu")===null'),true);
+            assert.equal(await evaluate('document.activeElement.matches(".duration input")'),true);
             assert.ok(await evaluate('document.querySelector(".question-type").getBoundingClientRect().height>=32'));
           }
           await inspectScreen(`${theme}-${size}-${mode}-question-header`);await screenshot(`${theme}-${size}-${mode}-question-header`);
@@ -336,6 +406,8 @@ try {
           if(size==='mobile')await cdp.call('Emulation.setDeviceMetricsOverride',{width:320,height:740,deviceScaleFactor:1,mobile:false},session);
           const rows=await evaluate('[...document.querySelectorAll(".question-heading")].map(h=>{const a=h.querySelector(".question-actions").getBoundingClientRect(),r=h.getBoundingClientRect();return a.left>=r.left-1&&Math.abs(a.right-r.right)<=1})');
           assert.deepEqual(rows,[true,true]);
+          assert.equal(await evaluate('[...document.querySelectorAll(".reorder button")].every(e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return s.borderRadius==="0px"&&s.padding==="2px"&&r.width>=32&&r.height>=24})'),true);
+          assert.equal(await evaluate('[...document.querySelectorAll(".option-actions")].every(e=>Math.abs(e.getBoundingClientRect().right-e.lastElementChild.getBoundingClientRect().right)<=1)'),true);
           await inspectScreen(`${theme}-${size}-${mode}-question-header-two`);
           if(size==='mobile') {
             await screenshot(`${theme}-320-${mode}-question-header`);
@@ -349,7 +421,7 @@ try {
           if(size==='mobile')await cdp.call('Emulation.setDeviceMetricsOverride',{width:320,height:740,deviceScaleFactor:1,mobile:false},session);
           await navigate();await click(theme==='dark'?'Dark':'Light');await click(mode==='quiz'?'New Live Quiz':'New Live Survey');
           await input('#quiz-title',`Ten-choice ${mode}`);await input('#question-0','Choose a topic from ten options');
-          if(mode==='survey')await input('.question-type','multiple');
+          if(mode==='survey')await chooseSurveyType('multiple');
           for(let index=0;index<10;index++) {
             if(index>=4)await click('Add option');
             await input(`#option-0-${index}`,`Choice ${index+1}${index===9?' | \\\\ '+ 'long-text-'.repeat(20):''}`);
@@ -373,11 +445,13 @@ try {
           await assertFilledForeground('.host-lobby .primary');
           await inspectScreen(`${label}-lobby`);await screenshot(`${label}-lobby`);
           await click(mode==='quiz'?'Start Quiz':'Start Survey');await until('!!document.querySelector(".host-stage.stage-question")');
+          await assertSmoothTimer(`${label}-host`);
           assert.equal(await evaluate('document.querySelectorAll(".answers .answer:not(.other-choice)").length'),10);
           assert.notEqual(await evaluate('getComputedStyle(document.querySelector(".answer-9")).backgroundColor'),'rgba(0, 0, 0, 0)');
           await inspectScreen(`${label}-host`);await screenshot(`${label}-host`);
           await navigate(`join/?code=600123&example=${mode}-ten`);
           await input('#nickname','Ten-choice attendee');await click('Join Game');await until('!!document.querySelector(".attendee-stage.stage-question")');
+          await assertSmoothTimer(`${label}-attendee`);
           if(mode==='quiz') {
             assert.equal(await evaluate('document.querySelectorAll("button.answer").length'),10);
             await evaluate('document.querySelector(".answer-9").focus()');
@@ -471,7 +545,7 @@ try {
       await check(`${label}: home layout, theme and accessibility`, async () => {
         assert.equal(await evaluate('document.documentElement.dataset.theme'), theme);
         assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions button")].map(e=>e.getAttribute("aria-label"))'), ['New Live Quiz','New Live Survey','Join with Code']);
-        assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions .action-description")].map(e=>e.textContent)'), ['Create a quiz and host it live.','Collect feedback in a live survey.','Enter a game code to take part.']);
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions .action-description")].map(e=>e.textContent)'), ['Create a quiz and host it live.','Collect feedback in a live survey.','Enter a quiz or survey.']);
         const actions = await evaluate(`(() => {
           const parent=document.querySelector(".home-actions");
           return {width:parent.clientWidth,buttons:[...parent.children].map(e=>{
@@ -504,12 +578,16 @@ try {
         assert.equal(await evaluate('document.querySelector(".session-metrics").textContent.includes("participants")'), false);
         assert.equal(await evaluate('document.querySelector(".session-date time").dateTime'), '2026-11-09T09:00:00.000Z');
         assert.equal(await evaluate('document.querySelectorAll(".home-actions button > svg").length'), 3);
+        const neutrals=await evaluate('[...document.querySelectorAll(".home-action")].map(e=>({background:getComputedStyle(e).backgroundColor,border:getComputedStyle(e).borderColor,description:getComputedStyle(e.querySelector(".action-description")).color,title:getComputedStyle(e.querySelector("strong")).color,icon:getComputedStyle(e.querySelector("svg")).color}))');
+        assert.equal(new Set(neutrals.map(e=>e.border)).size,1);
+        assert.equal(new Set(neutrals.map(e=>e.description)).size,1);
+        for(const entry of neutrals){assert.equal(entry.icon,entry.title);assert.notEqual(entry.description,entry.title);assert.equal(entry.background,theme==='light'?'rgb(255, 255, 255)':'rgb(34, 34, 60)');}
         await inspectScreen(`${label}-home`);
         const { root } = await cdp.call('DOM.getDocument', {}, session);
         const { nodeId } = await cdp.call('DOM.querySelector', { nodeId: root.nodeId, selector: '.home-actions .quiz-action' }, session);
         for (const forcedPseudoClasses of [[], ['hover'], ['focus'], ['active']]) {
           await cdp.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses }, session);
-          assert.equal(await evaluate('getComputedStyle(document.querySelector(".home-actions .quiz-action")).color'), await evaluate('getComputedStyle(document.querySelector(".brand-wordmark > span")).color'));
+          assert.equal(await evaluate('getComputedStyle(document.querySelector(".home-actions .quiz-action")).color'), await evaluate('getComputedStyle(document.body).color'));
         }
         await cdp.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] }, session);
         const actionNodes = [];
@@ -773,21 +851,25 @@ try {
         await navigate(); await click(theme === 'dark' ? 'Dark' : 'Light'); await click('New Live Survey');
         await input('#quiz-title', 'Survey with Other'); await input('#question-0', 'What would you like next?');
         for (const [i, option] of ['Sessions', 'Workshops', 'Demos', 'Labs'].entries()) await input(`#option-0-${i}`, option);
-        assert.equal(await evaluate('document.querySelector(".add-other")===null'),true);
-        assert.deepEqual(await evaluate('[...document.querySelector(".question-type").options].map(e=>e.textContent)'),['Single Select','Multiple Select','Free Text']);
-        await evaluate('document.querySelector(".question-type").focus()');
-        await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40},session);
-        await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40},session);
-        assert.equal(await evaluate('document.querySelector(".question-type").value'),'multiple');
-        await input('.question-type','text');
+        assert.equal(await evaluate('document.querySelector(".add-other")!==null'),true);
+        await click('Add Other to question 1');
+        await click('Save & Open Lobby');await until('!!document.querySelector(".host-lobby")');
+        await pointerClick('document.querySelector(".small-brand")');await until('!!document.querySelector(".session-open")');
+        await pointerClick('document.querySelector(".session-open")');await until('!!document.querySelector(".author")');
+        assert.equal(await evaluate('document.querySelector(".question-type").value'),'single');
+        assert.equal(await evaluate('document.querySelector(".other-option")!==null'),true);
+        assert.deepEqual(await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="create").draft.questions[0].survey'),{other:true,allowMultiple:false});
+        await chooseSurveyType('multiple');
+        await chooseSurveyType('text');
         assert.equal(await evaluate('document.querySelectorAll(\'input[id^="option-"]\').length'),0);
         assert.equal(await evaluate('document.querySelector(".add-other")===null'),true);
         await input('#question-0','What would you like next?');
         await input('#shared-duration','35');
-        await input('.question-type','single');
+        await chooseSurveyType('single');
         assert.deepEqual(await evaluate('[...document.querySelectorAll(\'input[id^="option-"]\')].map(e=>e.value)'),['Sessions','Workshops','Demos','Labs']);
         assert.equal(await evaluate('document.querySelector(".add-other")===null'),true);
-        await input('.question-type','multiple');
+        await chooseSurveyType('multiple');
+        await click('Remove question 1 Other');
         await click('Add Other to question 1');
         await evaluate('document.querySelector(".question-type").focus()');
         await inspectScreen(`${label}-survey-settings`); await screenshot(`${label}-survey-settings`);
@@ -803,9 +885,9 @@ try {
         assert.equal(await evaluate('document.querySelector(".other-option")===null'),true);
         assert.equal(await evaluate('document.querySelector(".add-other")===null'),true);
         await inspectScreen(`${label}-survey-only-other-author`); await screenshot(`${label}-survey-only-other-author`);
-        await input('.question-type','single');
+        await chooseSurveyType('single');
         assert.deepEqual(await evaluate('[...document.querySelectorAll(\'input[id^="option-"]\')].map(e=>e.value)'),['',''], 'explicitly deleted choices must not return');
-        await input('.question-type','text');
+        await chooseSurveyType('text');
         await click('Save & Open Lobby'); await until('!!document.querySelector(".host-lobby")');
         const saved = await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="edit"&&r.draft).draft');
         assert.deepEqual(saved.questions[0].survey, { other: true, allowMultiple: false });
@@ -815,10 +897,10 @@ try {
         await until('!!document.querySelector(".author-content:not(:disabled)")');
         assert.equal(await evaluate('document.querySelector(".question-type").value'), 'text');
         assert.equal(await evaluate('document.querySelectorAll(\'input[id^="option-"]\').length'), 0);
-        await input('.question-type','single');
+        await chooseSurveyType('single');
         assert.deepEqual(await evaluate('[...document.querySelectorAll(\'input[id^="option-"]\')].map(e=>e.value)'),['','']);
         assert.equal(await evaluate('document.querySelector("form").checkValidity()'),false);
-        await input('.question-type','text');
+        await chooseSurveyType('text');
         await click('Save & Open Lobby'); await until('!!document.querySelector(".host-lobby")');
         await evaluate('window.__quizcrowdFixture.phase("question")');
         await pointerClick('document.querySelector(".small-brand")'); await until('!!document.querySelector(".session-open")');
@@ -847,18 +929,26 @@ try {
         assert.equal(await evaluate('document.querySelector(".distribution").textContent.includes("Other1 responses")'), true);
         assert.equal(await evaluate('document.body.textContent.includes("Literal | and")'), false);
       });
-      await check(`${label}: survey Single Select has no Other and deselected multi Other text is omitted`, async () => {
+      await check(`${label}: survey Single Select Other is exclusive and deselected Other text is omitted`, async () => {
         await navigate('join/?code=000123&example=survey-single');
         await input('#nickname', 'Survey tester'); await click('Join Game'); await until('!!document.querySelector(".survey-response")');
-        assert.equal(await evaluate('document.querySelectorAll(".survey-choice input[type=radio]").length'), 2);
-        assert.equal(await evaluate('document.querySelector(".other-choice")===null'),true);
-        await pointerClick('document.querySelectorAll(".survey-choice input")[0]');
+        assert.equal(await evaluate('document.querySelectorAll(".survey-choice input[type=radio]").length'), 3);
+        await pointerClick('document.querySelector(".other-choice input")');await input('.survey-written-response textarea','Discarded stale text');
         await pointerClick('document.querySelectorAll(".survey-choice input")[1]');
         assert.equal(await evaluate('document.querySelectorAll(".survey-choice input:checked").length'), 1);
         assert.equal(await evaluate('document.querySelector(".survey-written-response")===null'), true);
         await inspectScreen(`${label}-survey-single`);
         await click('Submit response'); await until('!!document.querySelector(".submitted")');
         assert.deepEqual(await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="answer").response'), { options: [1] });
+        await navigate('join/?code=000123&example=survey-single');
+        await input('#nickname','Single Other tester');await click('Join Game');await until('!!document.querySelector(".survey-response")');
+        await pointerClick('document.querySelectorAll(".survey-choice input")[0]');
+        await pointerClick('document.querySelector(".other-choice input")');
+        await input('.survey-written-response textarea','Single | with \\ literal');
+        assert.equal(await evaluate('document.querySelectorAll(".survey-choice input:checked").length'),1);
+        await inspectScreen(`${label}-survey-single-other`);await screenshot(`${label}-survey-single-other`);
+        await click('Submit response');await until('!!document.querySelector(".submitted")');
+        assert.deepEqual(await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="answer").response'),{options:[],other:'Single | with \\ literal'});
         await navigate('join/?code=000123&example=survey-multiple');
         await input('#nickname', 'Survey tester'); await click('Join Game'); await until('!!document.querySelector(".survey-response")');
         for (const index of [0, 1, 2]) await pointerClick(`document.querySelectorAll(".survey-choice input")[${index}]`);

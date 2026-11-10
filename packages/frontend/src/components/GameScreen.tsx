@@ -3,6 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import type { GameView, SurveyResponse } from '@rayfin-app/shared';
 import { Icon } from './Icon';
 import { SurveyAnswers } from './SurveyAnswers';
+import { useQuestionCountdown } from '../lib/useQuestionCountdown';
 
 type Ranking = NonNullable<GameView['rankings']>[number];
 export function Podium({ rankings }: { rankings: Ranking[] }) {
@@ -16,10 +17,11 @@ export function Podium({ rankings }: { rankings: Ranking[] }) {
     })}
   </div>;
 }
-export function GameScreen({ game, host, nickname, seconds, joinUrl, busy, onControl, onAnswer, onSurveyAnswer, onHome, onCopyError }: {
-  game: GameView; host: boolean; guest: boolean; nickname: string; seconds: number; joinUrl: string; busy: boolean;
+export function GameScreen({ game, host, nickname, joinUrl, busy, onControl, onAnswer, onSurveyAnswer, onHome, onCopyError }: {
+  game: GameView; host: boolean; guest: boolean; nickname: string; joinUrl: string; busy: boolean;
   onControl(): void; onAnswer(option: number): void; onSurveyAnswer(response: SurveyResponse): void; onHome(): void; onCopyError(error: unknown): void;
 }) {
+  const { seconds, fill } = useQuestionCountdown(game);
   const [copied, setCopied] = useState('');
   useEffect(() => {
     if (!copied) return;
@@ -64,7 +66,7 @@ export function GameScreen({ game, host, nickname, seconds, joinUrl, busy, onCon
       <section className={host ? 'card question-screen' : 'attendee-question'}>
         <div className="timer" role="timer" aria-label={`${seconds} seconds remaining`}>
           <span className={seconds <= 5 ? 'urgent' : 'muted'}>{seconds}s</span>
-          <div className="timer-track" role="progressbar" aria-label="Time remaining" aria-valuemin={0} aria-valuemax={question.duration} aria-valuenow={seconds}><div className="timer-fill" style={{ width: `${Math.min(100, 100 * seconds / question.duration)}%` }} /></div>
+          <div className="timer-track" role="progressbar" aria-label="Time remaining" aria-valuemin={0} aria-valuemax={question.duration} aria-valuenow={seconds}><div ref={fill} className="timer-fill" /></div>
         </div>
         <div className="question-text"><p className="muted small">{questionLabel}</p><h1>{question.text}</h1></div>
         {!host && !answered && game.mode === 'survey' ? <SurveyAnswers key={`${game.id}-${game.questionIndex}`} question={question} disabled={busy || seconds === 0} onSubmit={onSurveyAnswer} />

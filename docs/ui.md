@@ -148,8 +148,9 @@ white would fail text-contrast checks. Filled primary actions use white text in
 both themes, including hover/focus/active/disabled states. The editor's generic
 outline-button hover rule explicitly excludes filled primary/secondary buttons;
 it previously overrode their white foreground with dark text in Light mode.
-Home uses separate `home-action` buttons with pale purple/pink tinted surfaces,
-colored icons/text/borders, equal compact 260px geometry and 1.01 hover scale.
+Home uses separate `home-action` buttons with white Light surfaces and neutral
+Dark surfaces, neutral borders/descriptions, and color only on icons/titles.
+Equal compact 260px geometry and 1.01 hover scale are retained.
 Game-screen purple button fills are slightly darker for text contrast.
 Deletion icons are neutral normally and red on hover/focus.
 
@@ -197,13 +198,18 @@ still disabled and the server/global/public-acknowledgement boundaries are uncha
 
 ## Survey question types and Other
 
-The upper-right question header directly shows a compact native select with
-three choices and standard keyboard navigation. There is no question gear/menu
-to open; the selected type stays visible. The sidebar's Settings gear remains.
+The upper-right question header shows a borderless neutral type label with a
+sliders icon; both become purple on hover/focus. Its anchored radio menu offers
+three choices, keyboard arrows/Home/End/letter navigation, Enter/Space selection,
+Escape/focus restoration and outside-click/Tab dismissal. The selected type
+stays visible. The sidebar's Settings gear remains.
 Duration, type and delete controls share a right-aligned, wrapping action group;
 the question title and reorder controls stay on the left. This also fixes the
 single-question Quiz timer previously losing its right alignment to a
-last-child margin rule. Quiz questions never show a Survey type select.
+last-child margin rule. Quiz questions never show a Survey type picker.
+Add option and Add Other share a right-aligned action row; Quiz correctness
+guidance stays below it. Reorder buttons use compact square geometry with
+32px-high mobile hit targets.
 
 Quiz and Survey editors allow up to ten normal choices. Add option stays visible
 but disabled as **10 options maximum** at the limit and becomes available again
@@ -213,11 +219,11 @@ response distributions cover every choice, including the tenth.
 
 | Choice | Existing JSON representation | Authoring |
 | --- | --- | --- |
-| Single Select | Normal options; `other:false`, `allowMultiple:false` (or absent legacy flags) | One answer; no Add Other action |
+| Single Select | Normal options; `allowMultiple:false` (or absent legacy flags), optional `other:true` | One normal answer OR written Other; optional Add Other/remove Other |
 | Multiple Select | Normal options; `allowMultiple:true` | Multiple answers; optional Add Other/remove Other |
 | Free Text | No normal options; `other:true`, `allowMultiple:false` | Written response only, no visible Other row/action |
 
-Quiz questions expose none of these features. With multiple-choice Other
+Quiz questions expose none of these features. With either choice type's Other
 enabled, creators can remove every normal option; removing the last one
 selects Free Text. The server rejects Other-only with multiple selection.
 Other cannot be removed until two normal choices remain, preventing an empty
@@ -226,16 +232,13 @@ Switching to Free Text removes normal choices from the submitted/persisted
 question, but keeps them in the current unsaved editor draft for switching
 back, including across duration/text edits. After reopening a saved Free Text
 question, switching back starts with two empty required choices. No hidden
-normal choices or extra type metadata are persisted.
+normal choices or extra type metadata are persisted. Switching back retains
+Other until explicitly removed, including when returning from Free Text.
 
-Existing single-choice + Other records remain playable, readable and copyable
-without silently rewriting their content/answers. The menu infers Single Select
-for this legacy shape; read-only authoring still displays its Other row.
-Editable legacy questions explain that choosing Multiple Select retains Other,
-while an explicit save as Single Select removes it. New create/edit requests
-reject mixed single-choice + Other; frontend save normalization never mutates
-the source on read. A legacy question with only one normal choice must add
-another choice or switch type before saving as Single Select.
+Single-choice + Other records, both existing and newly authored, remain
+playable, editable and copyable without normalization or destructive saves.
+The menu infers Single Select and read-only authoring displays its Other row.
+Single responses reject mixed normal-plus-Other or multiple normal selections.
 
 Attendees use radio choices by default or checkboxes when Allow multiple is on,
 then **Submit response**. Selecting Other shows a required written-response
@@ -265,10 +268,11 @@ No seconds text or separate unit appears outside the control. Its accessible
 label still specifies seconds. The row can wrap on very narrow
 screens without overflowing; questions have no timer controls in this mode.
 The Answer duration heading has no decorative clock icon.
-**Customize per question** shows a duration at the top of every question and
+**Customize each question** shows a duration at the top of every question and
 removes the shared input. Values must be whole seconds from 5 through 120.
 Its help text is indented to align with the option text, not the radio circle,
-and is associated with that radio using `aria-describedby`.
+and is associated with that radio using `aria-describedby`. The displayed copy
+is **Set seperately on each question.**
 Changing to custom initializes questions with the current shared value.
 Changing back uses the remembered shared value, or the first question's value
 for legacy custom content, deterministically. New questions inherit that value.
@@ -282,6 +286,19 @@ question values; opening it does not rewrite it. No SQL column/table or migratio
 is needed. Server validation rejects inconsistent shared-mode times and the edit
 lock protects both the setting and effective times.
 This does not remove live countdowns or change survey timed-collection semantics.
+
+The live host/attendee progress bar uses a monotonic animation-frame clock
+anchored to the server's question start, duration and timestamp. Only its DOM
+transform changes each frame; seconds labels/accessible values update once per
+second. Fresh polls synchronize without growing the same-question bar. Background
+resume catches up, expiry clamps at zero, and question changes/unmount cancel
+pending frames. This is display-only: server timeouts, scoring and progression
+remain authoritative. The previous integer-second width plus short CSS
+transition caused the visible once-per-second jumps.
+
+The join page is **Join with Code**, its input is **Session Code**, and the
+home action description is **Enter a quiz or survey.** These labels do not
+change the six-digit invitation or credential/authorization semantics.
 
 ## Exactly two themes
 

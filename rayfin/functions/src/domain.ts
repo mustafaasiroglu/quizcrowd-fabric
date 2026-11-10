@@ -44,17 +44,6 @@ export const draftSchema = z.object({
   });
 });
 
-// Stored legacy single-choice + Other questions remain readable and copyable.
-// New authoring requests must use Multiple Select for mixed choices + Other.
-export const authoringDraftSchema = draftSchema.superRefine((draft, ctx) => {
-  if (draft.mode !== 'survey') return;
-  draft.questions.forEach((question, index) => {
-    if (question.options.length && question.survey?.other && !question.survey.allowMultiple) {
-      ctx.addIssue({ code: 'custom', message: 'Other is only available for Multiple Select or Free Text', path: ['questions', index, 'survey'] });
-    }
-  });
-});
-
 export interface Settings {
   anonymousEnabled: boolean;
   guestEpoch: number;

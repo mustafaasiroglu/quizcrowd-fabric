@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AnswerSubmission, AuthorView, Draft, GameView, QuizSummary, SettingsView } from '@rayfin-app/shared';
-import { normalizeSurveyAuthoring } from '@rayfin-app/shared';
 import type { OpaqueSession } from '@microsoft/rayfin-auth';
 import { call, connect, type Connection } from './lib/rayfin-client';
 import { AuthorEditor, blankDraft } from './components/AuthorEditor';
@@ -34,9 +33,7 @@ export default function App() {
   const [quizzes, setQuizzes] = useState<QuizSummary[]>([]);
   const [ticket, setTicket] = useState<Ticket>();
   const [game, setGame] = useState<GameView>();
-  const [clock, setClock] = useState(Date.now());
   const content = useRef<HTMLDivElement>(null);
-  const skew = useRef(0);
   const operation = useRef(0);
   const navigationVersion = useRef(0);
   const identityVersion = useRef(0);
@@ -172,7 +169,6 @@ export default function App() {
           command: route.host ? 'host' : 'state', id: route.id,
         }, route.host ? '' : ticket?.token, !route.host && ticket?.guest);
         if (current()) {
-          skew.current = next.serverNow - Date.now();
           setGame(next); setError('');
           if (route.host && route.lobby !== (next.phase === 'lobby')) {
             navigate({ ...route, lobby: next.phase === 'lobby' }, true);
@@ -187,10 +183,6 @@ export default function App() {
     void poll();
     return () => { stopped = true; clearTimeout(timeout); };
   }, [connection, routeKey, signedIn, session, ticket]);
-  useEffect(() => {
-    const timer = setInterval(() => setClock(Date.now()), 200);
-    return () => clearInterval(timer);
-  }, []);
 
   function signIn() {
     if (!connection) return;
@@ -234,8 +226,6 @@ export default function App() {
     if (current()) setGame(next);
   }
   const joinUrl = game ? `${location.origin}${routeUrl({ page: 'join', invitation: game.code })}` : '';
-  const seconds = game?.question && game.questionStartedAt
-    ? Math.max(0, Math.ceil((game.questionStartedAt + game.question.duration * 1000 - clock - skew.current) / 1000)) : 0;
   const back = <button className="icon-button" aria-label="Go back" onClick={home}><Icon name="back" /></button>;
   const recent = <SessionLibrary quizzes={quizzes} busy={busy} onOpen={(q) => openDraft(q.id)}
     onDuplicate={(id) => void run(async (current) => { const copy = await call<{ id: string }>(connection!, { command: 'duplicate', id }); if (current()) openDraft(copy.id); })}
@@ -261,16 +251,16 @@ export default function App() {
         <div className="home-actions">
           <button className="home-action quiz-action" aria-label="New Live Quiz" aria-describedby="new-quiz-description" disabled={!connection || busy} onClick={() => create('quiz')}><Icon name="quiz" /><span><strong>New Live Quiz</strong><span id="new-quiz-description" className="action-description">Create a quiz and host it live.</span></span></button>
           <button className="home-action survey-action" aria-label="New Live Survey" aria-describedby="new-survey-description" disabled={!connection || busy} onClick={() => create('survey')}><Icon name="survey" /><span><strong>New Live Survey</strong><span id="new-survey-description" className="action-description">Collect feedback in a live survey.</span></span></button>
-          <button className="home-action join-code-button" aria-label="Join with Code" aria-describedby="join-description" disabled={busy} onClick={() => navigate({ page: 'join', invitation: '' })}><Icon name="join" /><span><strong>Join with Code</strong><span id="join-description" className="action-description">Enter a game code to take part.</span></span></button>
+          <button className="home-action join-code-button" aria-label="Join with Code" aria-describedby="join-description" disabled={busy} onClick={() => navigate({ page: 'join', invitation: '' })}><Icon name="join" /><span><strong>Join with Code</strong><span id="join-description" className="action-description">Enter a quiz or survey.</span></span></button>
         </div>
         {signedIn ? <>{refreshing && <p className="muted small" role="status">Refreshing recent items...</p>}{recent}</>
           : <section className="card home-signin"><h2>Recent Items</h2><p className="muted">Your recent quiz and surveys.</p><p className="muted">Sign in with Microsoft Entra to create and manage your sessions. Attendees can join using a six-digit game code.</p></section>}
       </div>}
       {page === 'join' && <div className="centered-page">
         <section className="card join-card">
-          <div className="section-heading page-heading"><button className="icon-button" aria-label="Go back" onClick={() => joinStep === 'nickname' ? navigate({ page: 'join', invitation: '' }) : home()}><Icon name="back" /></button><h1>Join Quiz</h1></div>
+          <div className="section-heading page-heading"><button className="icon-button" aria-label="Go back" onClick={() => joinStep === 'nickname' ? navigate({ page: 'join', invitation: '' }) : home()}><Icon name="back" /></button><h1>Join with Code</h1></div>
           {joinStep === 'code' ? <form onSubmit={(e) => { e.preventDefault(); if (/^\d{6}$/.test(code)) navigate({ page: 'join', invitation: code }); }}>
-            <label htmlFor="session-code">Game Code</label>
+            <label htmlFor="session-code">Session Code</label>
             <input id="session-code" className="code-input" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="off" required minLength={6} />
             <button type="submit" className="primary full-width" disabled={!/^\d{6}$/.test(code)}>Next</button>
           </form> : <form onSubmit={(e) => { e.preventDefault(); if (signedIn) void run((current) => enter(false, current)); }}>
@@ -304,11 +294,11 @@ export default function App() {
           if (current()) { setDraft(saved.draft); setReadOnly(saved.readOnly); }
         }
       }) : undefined} onSave={() => void run(async (current) => {
-        const saved = await call<{ id: string }>(connection!, { command: editing ? 'edit' : 'create', id: editing, draft: normalizeSurveyAuthoring(draft) });
+        const saved = await call<{ id: string }>(connection!, { command: editing ? 'edit' : 'create', id: editing, draft });
         if (current()) host(saved.id);
       })} />}
-      {route.page === 'game' && !route.host && ticket?.id !== route.id && <section className="card sign-in-card"><h1>Join this session</h1><p className="muted">The attendee credential is stored only in the tab where you joined.</p><button className="primary" onClick={() => navigate({ page: 'join', invitation: route.id })}>Join Quiz</button></section>}
-      {route.page === 'game' && !signInGate && (route.host || ticket?.id === route.id) && (!game ? <div className="centered-page"><section className="card loading-card">{!error && <div className="loading-spinner" />}<p role="status">{error ? 'Session unavailable.' : 'Loading session...'}</p>{error && <button className="primary" onClick={home}>Back to Home</button>}</section></div> : <GameScreen game={game} host={showingHost} guest={!!ticket?.guest} nickname={nickname} seconds={seconds} joinUrl={joinUrl} busy={busy} onCopyError={(e) => setError(`Could not copy to clipboard: ${message(e)}`)} onHome={home} onControl={() => void run(async (current) => {
+      {route.page === 'game' && !route.host && ticket?.id !== route.id && <section className="card sign-in-card"><h1>Join this session</h1><p className="muted">The attendee credential is stored only in the tab where you joined.</p><button className="primary" onClick={() => navigate({ page: 'join', invitation: route.id })}>Join with Code</button></section>}
+      {route.page === 'game' && !signInGate && (route.host || ticket?.id === route.id) && (!game ? <div className="centered-page"><section className="card loading-card">{!error && <div className="loading-spinner" />}<p role="status">{error ? 'Session unavailable.' : 'Loading session...'}</p>{error && <button className="primary" onClick={home}>Back to Home</button>}</section></div> : <GameScreen game={game} host={showingHost} guest={!!ticket?.guest} nickname={nickname} joinUrl={joinUrl} busy={busy} onCopyError={(e) => setError(`Could not copy to clipboard: ${message(e)}`)} onHome={home} onControl={() => void run(async (current) => {
         await call(connection!, { command: 'control', id: game.id, action: game.phase === 'lobby' ? 'start' : 'next', version: game.version });
         if (!current()) return;
         const next = await call<GameView>(connection!, { command: 'host', id: game.id });

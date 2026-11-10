@@ -163,14 +163,12 @@ otherwise at least two are required. Other-only questions reject
 single-choice answers, correctness and scoring.
 
 The editor infers three types from those existing fields: Single Select
-(normal options, multiple off), Multiple Select (multiple on, optional Other),
-and Free Text (no normal options, Other on, multiple off). New create/edit
-requests use `authoringDraftSchema`, which rejects mixed Single Select + Other.
-The base stored-content validator and answer projection still support that
-legacy shape: read and duplicate do not rewrite old flags or submissions.
-Explicit frontend saves normalize an editable legacy Single Select question
-to normal choices only, with visible guidance to select Multiple Select to
-retain Other. No type column or extra persisted type discriminator is needed.
+(normal options, multiple off, optional Other), Multiple Select (multiple on,
+optional Other), and Free Text (no normal options, Other on, multiple off).
+The same draft validator supports authoring and stored content. Single Select
+accepts one normal answer OR Other text, never both or multiple normal choices.
+Read, save and duplicate do not normalize away existing Other flags/submissions.
+No type column or extra persisted type discriminator is needed.
 Temporarily remembered choices when switching to Free Text belong only to
 the unsaved editor, never the persisted question/answer payload.
 

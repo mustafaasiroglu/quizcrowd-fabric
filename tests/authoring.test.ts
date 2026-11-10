@@ -2,7 +2,7 @@ import sql from 'mssql';
 import { describe, expect, it, vi } from 'vitest';
 import { execute } from '../rayfin/functions/src/service';
 import { authorDraft, createGame, createJoinCode, draftSchema } from '../rayfin/functions/src/domain';
-import { getAnswerDuration, getSurveyQuestionType, normalizeSurveyAuthoring, setAnswerDuration, setSurveyQuestionType } from '../packages/shared/src/index';
+import { getAnswerDuration, getSurveyQuestionType, setAnswerDuration, setSurveyQuestionType } from '../packages/shared/src/index';
 import { isJoinCodeCollision, retryJoinCode, type Store, type UnitOfWork } from '../rayfin/functions/src/sql-store';
 
 const random = vi.hoisted(() => ({ value: 7, bound: 0 }));
@@ -89,28 +89,27 @@ describe('six-digit codes and owner authoring transactions (test store)', () => 
     expect(getSurveyQuestionType(text)).toBe('text');
     const restored = setSurveyQuestionType(text, 'single', source.options);
     expect(restored.options).toEqual(source.options);
-    expect(restored.survey).toEqual({ other: false, allowMultiple: false });
+    expect(restored.survey).toEqual({ other: true, allowMultiple: false });
     expect(setSurveyQuestionType(text, 'multiple').options).toEqual(['', '']);
     expect(source).toEqual(before);
   });
-  it('rejects new Single Select + Other writes but preserves legacy read, duplicate and response contracts', async () => {
+  it('creates and saves Single Select + Other without normalizing existing records', async () => {
     const f = fixture('survey');
     f.game().questions[0].survey = { other: true, allowMultiple: false };
     const legacy = authorDraft(f.game()), bytes = JSON.stringify(f.game());
     expect(await execute(f.store, { command: 'edit', id: f.game().id }, 'owner', '')).toMatchObject({ draft: legacy });
-    for (const command of ['create', 'edit']) {
-      await expect(execute(f.store, { command, id: f.game().id, draft: legacy }, 'owner', '')).rejects.toThrow('Other is only available');
-    }
+    const created = await execute(f.store, { command: 'create', draft: legacy }, 'owner', '') as { id: string };
+    expect(f.games().find(game => game.id === created.id)?.questions).toEqual(legacy.questions);
     const copy = await execute(f.store, { command: 'duplicate', id: f.game().id }, 'owner', '') as { id: string };
     expect(f.games().find(game => game.id === copy.id)?.questions).toEqual(legacy.questions);
     expect(JSON.stringify(f.game())).toBe(bytes);
-    const normalized = normalizeSurveyAuthoring(legacy);
-    expect(normalized.questions[0].survey).toEqual({ other: false, allowMultiple: false });
-    expect(legacy.questions[0].survey?.other).toBe(true);
-    await execute(f.store, { command: 'edit', id: copy.id, draft: normalized }, 'owner', '');
-    expect(f.games().find(game => game.id === copy.id)?.questions[0].survey?.other).toBe(false);
+    await execute(f.store, { command: 'edit', id: copy.id, draft: legacy }, 'owner', '');
+    expect(f.games().find(game => game.id === copy.id)?.questions[0].survey).toEqual({ other: true, allowMultiple: false });
     const ticket = await execute(f.store, { command: 'join', id: f.game().id, nickname: 'Legacy' }, 'a', '', 1000) as { token: string };
     await execute(f.store, { command: 'control', id: f.game().id, action: 'start', version: f.game().version }, 'owner', '', 2000);
+    for (const response of [{ options: [0, 1] }, { options: [0], other: 'Both are not allowed' }, { options: [0, 0] }]) {
+      await expect(execute(f.store, { command: 'answer', id: f.game().id, questionIndex: 0, response }, 'a', ticket.token, 3000)).rejects.toThrow();
+    }
     await execute(f.store, { command: 'answer', id: f.game().id, questionIndex: 0, response: { options: [], other: 'Legacy | text' } }, 'a', ticket.token, 3000);
     expect(f.game().answers[0]).toMatchObject({ format: 'survey-v1', option: 't:Legacy \\| text', points: 0 });
   });

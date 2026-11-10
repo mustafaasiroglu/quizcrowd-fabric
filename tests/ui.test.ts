@@ -41,7 +41,7 @@ beforeAll(async () => {
           return renderToStaticMarkup(h(AuthorEditor, {draft:{...blankDraft(),...patch},onChange:noop,editing,anonymousEnabled,readOnly,busy:false,onSave:noop,onBack:noop}));
         }
         export function renderGame(game, host = false) {
-          return renderToStaticMarkup(h(GameScreen,{game,host,guest:false,nickname:'Alex',seconds:10,joinUrl:'https://test.invalid/?quiz=game',busy:false,onControl:noop,onAnswer:noop,onSurveyAnswer:noop,onHome:noop,onCopyError:noop}));
+          return renderToStaticMarkup(h(GameScreen,{game,host,guest:false,nickname:'Alex',joinUrl:'https://test.invalid/?quiz=game',busy:false,onControl:noop,onAnswer:noop,onSurveyAnswer:noop,onHome:noop,onCopyError:noop}));
         }
       ` : undefined,
     }],
@@ -236,6 +236,8 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(locked).toMatch(/<input(?=[^>]*name="answer-duration")(?=[^>]*value="custom")(?=[^>]*checked="")[^>]*>/);
     expect(locked.match(/class="duration"/g)).toHaveLength(2);
     expect(locked).not.toContain('id="shared-duration"');
+    expect(locked).toContain('Customize each question');
+    expect(locked).toContain('id="custom-duration-help" class="small muted option-help">Set seperately on each question.');
     expect(locked).toContain('class="author-content" disabled=""');
   });
   it('adjusts selected answer indices when removing an option without changing survey nulls', () => {
@@ -244,30 +246,32 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(ui.removeOption(question, 2).correctIndex).toBeNull();
     expect(ui.removeOption({ ...question, correctIndex: null }, 0).correctIndex).toBeNull();
   });
-  it('offers three Survey types and Other only for multiple choices, normalizing the last option removal', () => {
+  it('offers a Survey type menu and optional Other in Single and Multiple, preserving text-only removal', () => {
     expect(ui.renderEditor()).not.toContain('Allow multiple');
     expect(ui.renderEditor()).not.toContain('Add Other');
     const single = ui.renderEditor({ mode: 'survey' });
-    for (const label of ['Single Select', 'Multiple Select', 'Free Text']) expect(single).toContain(label);
-    expect(single).not.toContain('Add Other');
+    expect(single).toContain('Single Select');
+    expect(single).toContain('aria-haspopup="menu" aria-expanded="false"');
+    expect(single).toContain('Add Other');
     expect(ui.renderEditor({ mode: 'survey', questions: [{ text: 'Q', options: ['A', 'B'], correctIndex: null, duration: 20, survey: { other: false, allowMultiple: true } }] })).toContain('Add Other');
     const question: Question = { text: 'Write feedback', options: ['A'], correctIndex: null, duration: 20, survey: { other: true, allowMultiple: true } };
     const onlyOther = ui.removeOption(question, 0);
     expect(onlyOther).toMatchObject({ options: [], correctIndex: null, survey: { other: true, allowMultiple: false } });
     const editor = ui.renderEditor({ mode: 'survey', questions: [onlyOther] });
-    expect(editor).toContain('aria-label="Question 1 response type"');
-    expect(editor).toMatch(/<option(?=[^>]*value="text")(?=[^>]*selected="")[^>]*>/);
+    expect(editor).toContain('aria-label="Question 1 response type: Free Text"');
+    expect(editor).toContain('class="question-type" value="text"');
     expect(editor).not.toContain('Add Other');
     expect(editor).not.toContain('class="other-option"');
     expect(editor).not.toContain('Add option</button>');
     expect(ui.renderEditor({ mode: 'survey', questions: [onlyOther] }, false, true)).toContain('class="author-content" disabled=""');
   });
-  it('groups question controls on the right and shows a direct Survey-only type select', () => {
+  it('groups question controls on the right and shows a borderless Survey-only menu trigger', () => {
     const quiz = ui.renderEditor({ answerDuration: { mode: 'custom', seconds: 20 } });
     expect(quiz).toContain('<div class="question-actions"><label class="duration"');
     expect(quiz).not.toContain('class="question-type"');
     const survey = ui.renderEditor({ mode: 'survey' });
-    expect(survey).toContain('<select class="question-type"');
+    expect(survey).toContain('class="question-type" value="single"');
+    expect(survey).not.toContain('<select class="question-type"');
     expect(survey).not.toContain('question-settings');
     expect(survey).not.toContain('name="survey-type-0" type="radio"');
     expect(survey).toContain('<h2 id="settings-heading">');
