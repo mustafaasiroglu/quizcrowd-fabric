@@ -16,7 +16,7 @@ export function Podium({ rankings }: { rankings: Ranking[] }) {
     })}
   </div>;
 }
-export function GameScreen({ game, host, guest, nickname, seconds, joinUrl, busy, onControl, onAnswer, onSurveyAnswer, onHome, onCopyError }: {
+export function GameScreen({ game, host, nickname, seconds, joinUrl, busy, onControl, onAnswer, onSurveyAnswer, onHome, onCopyError }: {
   game: GameView; host: boolean; guest: boolean; nickname: string; seconds: number; joinUrl: string; busy: boolean;
   onControl(): void; onAnswer(option: number): void; onSurveyAnswer(response: SurveyResponse): void; onHome(): void; onCopyError(error: unknown): void;
 }) {
@@ -35,7 +35,6 @@ export function GameScreen({ game, host, guest, nickname, seconds, joinUrl, busy
   const correct = game.correctIndex === undefined ? undefined : question?.options[game.correctIndex];
   const answered = game.myOption !== undefined || game.myResponse !== undefined;
   const last = game.questionIndex + 1 >= game.totalQuestions;
-  const role = host ? 'Host' : guest ? 'Anonymous attendee' : 'Attendee';
   const rankings = game.rankings ?? [];
   function leaderboard(entries: Ranking[]) {
     return <ol className="rankings">{entries.map((entry) => <li key={entry.rank} className={entry.nickname === nickname && !host ? 'is-me' : ''}>
@@ -45,22 +44,22 @@ export function GameScreen({ game, host, guest, nickname, seconds, joinUrl, busy
   return <div className={`game-stage stage-${game.phase} ${host ? 'host-stage' : 'attendee-stage'}`} data-phase={game.phase}>
     {game.phase === 'lobby' ? <section className={`card lobby ${host ? 'host-lobby' : 'attendee-lobby'}`}>
       {host ? <>
-        <h1>Session Lobby</h1><p className="muted">Share this code with players</p>
+        <h1>Waiting for Users</h1><p className="muted">Share this code with attendees</p>
         <div className="code-panel"><div className="session-code"><strong>{game.code}</strong><button className="icon-button" aria-label="Copy session code" onClick={() => void copy(game.code)}><Icon name={copied === game.code ? 'check' : 'copy'} /></button></div>
           <div className="join-link"><a href={joinUrl}>{joinUrl}</a><button className="icon-button" aria-label="Copy invite link" onClick={() => void copy(joinUrl)}><Icon name={copied === joinUrl ? 'check' : 'copy'} /></button></div>
         </div>
         <div className="qr-container"><QRCodeSVG value={joinUrl} size={150} title="Scan to join this quiz" /></div>
         {copied && <span role="status" className="sr-only">Copied to clipboard.</span>}
-        <p className="muted small">{game.players.length} player{game.players.length !== 1 ? 's' : ''} joined</p>
+        <p className="muted small">{game.players.length} attendee{game.players.length !== 1 ? 's' : ''} joined</p>
         <div className="players">{game.players.map((player, index) => <span key={index}>{player}</span>)}</div>
-        <button className="primary full-width large-button" disabled={busy || !game.players.length} onClick={onControl}>{busy ? 'Starting...' : 'Start Game'}</button>
+        <button className="primary full-width large-button" disabled={busy || !game.players.length} onClick={onControl}>{busy ? 'Starting...' : game.mode === 'quiz' ? 'Start Quiz' : 'Start Survey'}</button>
       </> : <>
         <h1>You're in! <span aria-hidden="true">🎉</span></h1>
         {nickname && <p className="nickname">{nickname}</p>}
         <p className="muted">Waiting for host to start...</p><div className="loading-spinner" role="status" aria-label="Waiting for host" />
         <div className="players">{game.players.map((player, index) => <span key={index} className={player === nickname ? 'is-me' : ''}>{player}</span>)}</div>
       </>}
-      <p className="game-context muted small">{game.title} · {role} · {game.mode}</p>
+      <p className="game-context muted small">{game.title}</p>
     </section> : game.phase === 'question' && question ? <>
       <section className={host ? 'card question-screen' : 'attendee-question'}>
         <div className="timer" role="timer" aria-label={`${seconds} seconds remaining`}>

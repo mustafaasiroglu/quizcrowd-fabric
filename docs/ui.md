@@ -45,7 +45,7 @@ DOM changes into the platform page.
 | Join | Narrow card, six-digit numeric string code including leading zeros, separate nickname step; old links resolve; no pre-join preview action |
 | Author | Wide title/questions column with white Light surfaces or dark indigo surfaces; compact question cards, correctness controls, options and reordering |
 | Settings | Right sidebar on desktop, after the question/content column on narrow layouts in both visual and DOM/tab order; Who can respond? first, then answer duration, late joins and Quiz-only answer reveal; no Content Type label/control |
-| Host lobby | 448px card, prominent session code, copy code/link, white QR panel, joined-player chips and start action |
+| Host lobby | 448px card, Waiting for Users, code/link/QR, attendee chips/count, Start Quiz or Start Survey; footer shows the title only |
 | Attendee | Waiting card, full-width timer, colored answer choices, submitted-answer state and server-projected reveal |
 | Host question/results | Centered question card, colored options, timer/answer count, reveal, leaderboard and next/final controls |
 | Finish | Three-step podium in second / first / third order, remaining rankings and replay/home action |
@@ -65,10 +65,11 @@ gear and independently centered ring, with the same current-color stroke,
 rounded joins and nonshrinking icon sizing as the other controls. It replaces
 the previous asymmetric outer contour without changing menus or hit targets.
 
-The shared header brand adds an original monochrome four-tile mark beside the
-unchanged QuizCrowd wordmark: three filled rounded squares and one outlined
-square in a balanced 2x2 grid. `components/Brand.tsx` is the canonical SVG
-component, using the existing theme-aware purple text token and a 24-unit
+The shared header brand adds an original four-shape mark beside the
+unchanged QuizCrowd wordmark: filled square, circle, triangle, square in reading
+order in a balanced 2x2 grid. The final square uses the dark-pink secondary
+button token; the first three use theme-aware purple. `components/Brand.tsx`
+is the canonical SVG component, with a 24-unit
 viewBox. The glyph is decorative; the button retains the accessible
 **QuizCrowd home** name across home, join, editor, gameplay and admin.
 Browser review exports the actual glyph to
@@ -143,8 +144,13 @@ current screen remain visible.
 The light theme uses the same geometry, hierarchy and interactions, with pale
 backgrounds, dark text and readable accent variants. Muted text is more opaque
 than the original, and colored answer/podium blocks use dark foregrounds where
-white would fail text-contrast checks. Primary actions use white text in both
-themes; game-screen purple button fills are slightly darker for text contrast.
+white would fail text-contrast checks. Filled primary actions use white text in
+both themes, including hover/focus/active/disabled states. The editor's generic
+outline-button hover rule explicitly excludes filled primary/secondary buttons;
+it previously overrode their white foreground with dark text in Light mode.
+Home uses separate `home-action` buttons with pale purple/pink tinted surfaces,
+colored icons/text/borders, equal compact 260px geometry and 1.01 hover scale.
+Game-screen purple button fills are slightly darker for text contrast.
 Deletion icons are neutral normally and red on hover/focus.
 
 Fabric-specific necessities remain: Entra sign-in/out, a SQL-backed owner
@@ -198,6 +204,12 @@ Duration, type and delete controls share a right-aligned, wrapping action group;
 the question title and reorder controls stay on the left. This also fixes the
 single-question Quiz timer previously losing its right alignment to a
 last-child margin rule. Quiz questions never show a Survey type select.
+
+Quiz and Survey editors allow up to ten normal choices. Add option stays visible
+but disabled as **10 options maximum** at the limit and becomes available again
+after deleting a choice. Other is an additional Survey response, not a normal
+choice. Correct-answer radio buttons, stable numeric selection IDs and host
+response distributions cover every choice, including the tenth.
 
 | Choice | Existing JSON representation | Authoring |
 | --- | --- | --- |
@@ -273,14 +285,14 @@ This does not remove live countdowns or change survey timed-collection semantics
 
 ## Exactly two themes
 
-The first visit always starts **dark**, independently of operating-system
+The first visit always starts **light**, independently of operating-system
 appearance. The toolbar offers only moon/sun **Dark** and **Light** icon buttons,
 with accessible labels, titles and `aria-pressed`; no continuously visible text.
 There is no system/auto mode or URL theme override.
 
 The selected value is saved under `quizcrowd-theme` in browser local storage.
 An inline, allowlisted bootstrap restores it before React paints, so page
-transitions and reloads retain the preference. Invalid values become dark.
+transitions and reloads retain the preference. Invalid values become light.
 If browser storage is blocked, the choice still works for the open page and a
 visible status explains that it cannot survive reload. Theme storage contains
 only the preference, never quiz content, answer keys or identity credentials.
@@ -333,11 +345,24 @@ to review layout.
 
 The same **test-only** preview also includes already-running synthetic Survey
 examples. Open `/join/?code=000123&example=survey-multiple` for multiple choices
-plus Other, `/join/?code=000123&example=survey-single` for radio choices plus
+plus Other, `/join/?code=000123&example=survey-single` for radio choices without
 Other, or `/join/?code=000123&example=survey-other-only` for direct written
 feedback. Enter a demo nickname and Join Game; no real authentication, SQL
 or host session is involved. These query parameters have no production feature
 or authorization effect. Create your own Survey from home to inspect the editor.
+
+Ten-choice fixtures are available at
+`/join/?code=600123&example=quiz-ten` and
+`/join/?code=600123&example=survey-ten`. After joining, these show an already-running
+synthetic question. Create a ten-choice session from home to author and start it.
+`/host/lobby/?gameId=11111111-2222-4333-8444-555555555555&example=quiz-ten`
+(or `example=survey-ten`) opens that fixture's host lobby directly in a fresh tab.
+Preview tabs are independent; host actions in one do not progress another tab.
+The fixture
+invitation is deliberately fixed and checksum-valid, not the production random
+generator. Demo create/duplicate use a predictable test-only suffix counter with
+the same checksum format; production uses cryptographic randomness instead.
+The older `000123` fixtures exercise legacy numeric-code compatibility.
 
 The browser matrix covers both themes at 1440px and 390px, with a 320px
 overflow check. It uses actual pointer/keyboard events for navigation, theme

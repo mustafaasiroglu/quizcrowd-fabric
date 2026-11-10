@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { Draft, Question, SurveyQuestionType } from '@rayfin-app/shared';
-import { getAnswerDuration, getSurveyQuestionType, MAX_TITLE_LENGTH, PUBLIC_WARNING, setAnswerDuration, setSurveyQuestionType } from '@rayfin-app/shared';
+import { getAnswerDuration, getSurveyQuestionType, MAX_OPTIONS, MAX_TITLE_LENGTH, PUBLIC_WARNING, setAnswerDuration, setSurveyQuestionType } from '@rayfin-app/shared';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 import { DurationInput } from './DurationInput';
@@ -92,7 +92,7 @@ export function AuthorEditor({ draft, onChange, editing, anonymousEnabled, busy,
           </div>
           {draft.mode === 'survey' && getSurveyQuestionType(q) === 'text' && <p className="muted small">Respondents can write a free-text answer.</p>}
           {draft.mode === 'survey' && getSurveyQuestionType(q) === 'single' && q.survey?.other && !readOnly && <p className="muted small">This legacy question includes Other. Choose Multiple Select to keep it when saving; Single Select saves normal choices only.</p>}
-          {!readOnly && q.options.length < 4 && (draft.mode === 'quiz' || getSurveyQuestionType(q) !== 'text') && <button type="button" className="text-button" onClick={() => updateQuestion(i, { options: [...q.options, ''] })}><Icon name="plus" />Add option</button>}
+          {!readOnly && (draft.mode === 'quiz' || getSurveyQuestionType(q) !== 'text') && <button type="button" className="text-button" disabled={q.options.length >= MAX_OPTIONS} onClick={() => updateQuestion(i, { options: [...q.options, ''] })}><Icon name="plus" />{q.options.length >= MAX_OPTIONS ? '10 options maximum' : 'Add option'}</button>}
           {!readOnly && draft.mode === 'survey' && getSurveyQuestionType(q) === 'multiple' && !q.survey?.other && <button type="button" className="text-button add-other" aria-label={`Add Other to question ${i + 1}`} onClick={() => updateQuestion(i, { survey: { other: true, allowMultiple: true } })}><Icon name="plus" />Add Other</button>}
           {draft.mode === 'quiz' && <p className="muted small option-hint">Select the circle beside the correct answer.</p>}
         </fieldset>)}</div>

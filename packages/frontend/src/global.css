@@ -16,6 +16,7 @@
   --qc-primary-text: #b6b1ff;
   --qc-secondary: #ff6584;
   --qc-secondary-button: #c92f59;
+  --qc-secondary-text: #ffb1c2;
   --qc-secondary-fg: #ffffff;
   --qc-success: #43e97b;
   --qc-success-soft: rgb(67 233 123 / 14%);
@@ -60,6 +61,7 @@ html[data-theme="light"] {
   --qc-soft: #59647b;
   --qc-primary-text: #5145cd;
   --qc-secondary: #c92f59;
+  --qc-secondary-text: #b62347;
   --qc-secondary-fg: #ffffff;
   --qc-success: #12743b;
   --qc-success-soft: rgb(18 116 59 / 9%);
@@ -117,6 +119,7 @@ button.text-button { border: 0; padding: 8px 0; color: var(--qc-primary-text); b
 .brand-wordmark > span:first-child { color: var(--qc-primary-text); }
 .brand-wordmark > span:last-child { color: var(--qc-secondary); }
 .brand-mark { width: 28px; height: 28px; flex-shrink: 0; color: var(--qc-primary-text); }
+.brand-secondary { color: var(--qc-secondary-button); }
 .brand.small-brand { display: inline-flex; align-items: center; gap: 8px; }
 .small-brand { border: 0; background: transparent; padding: 0; font-size: 24px; }
 .theme-control { position: relative; }
@@ -142,10 +145,10 @@ button.text-button { border: 0; padding: 8px 0; color: var(--qc-primary-text); b
 .forms-home, .author { font-family: "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif; }
 .forms-home { display: block; text-align: left; width: 100%; padding: 0; }
 .forms-home .home-actions { flex-direction: row; flex-wrap: wrap; width: auto; max-width: none; gap: 12px; margin-bottom: 32px; }
-.forms-home .primary, .author .primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--forms-accent); color: var(--qc-button-fg); }
-.forms-home .survey-action { background: var(--qc-secondary-button); }
-.forms-home .home-actions > button { flex: 0 1 260px; max-width: 100%; justify-content: flex-start; gap: 12px; min-height: 76px; padding: 12px 16px; text-align: left; border: 1px solid var(--qc-border-strong); border-radius: 12px; }
-.forms-home .home-actions > button:hover:not(:disabled) { transform: scale(1.01); filter: brightness(.96); border-color: var(--qc-primary-text); }
+.author .primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--forms-accent); color: var(--qc-button-fg); }
+.forms-home .home-actions > .home-action { --action-color: var(--qc-primary-text); flex: 0 1 260px; max-width: 100%; display: inline-flex; align-items: center; justify-content: flex-start; gap: 12px; min-height: 76px; padding: 12px 16px; text-align: left; background: var(--qc-primary-soft); color: var(--action-color); border: 1px solid var(--action-color); border-radius: 12px; }
+.forms-home .home-actions > .survey-action { --action-color: var(--qc-secondary-text); background: var(--qc-secondary-soft); }
+.forms-home .home-actions > button:hover:not(:disabled) { transform: scale(1.01); filter: brightness(.96); border-color: var(--action-color); }
 .forms-home .home-actions > button:active:not(:disabled) { transform: scale(.99); }
 .home-actions > button > .icon { width: 24px; height: 24px; }
 .home-actions strong { font-size: 16px; }
@@ -260,7 +263,7 @@ input[type="radio"] { cursor: pointer; }
 .editor-actions button { flex: 1; padding: 12px 8px; color: var(--qc-muted); background: var(--qc-bg); border-width: 2px; font-weight: 500; }
 .outline-success { border-color: var(--qc-success); }
 .outline-primary { border-color: var(--qc-primary); }
-.editor-actions button:hover { color: var(--qc-text); }
+.editor-actions button:not(.primary):not(.secondary):hover { color: var(--qc-text); }
 .warning, .error { border: 1px solid var(--qc-danger); border-radius: 12px; background: var(--qc-secondary-soft); padding: 12px; font-size: 14px; }
 .warning p, .warning .check { color: var(--qc-text); }
 .error { color: var(--qc-danger); width: calc(100% - 32px); max-width: 672px; margin: 12px auto; overflow-wrap: anywhere; }
@@ -333,6 +336,10 @@ input[type="radio"] { cursor: pointer; }
 .answer-3 { background: var(--qc-option-3); }
 .answer-4 { background: var(--qc-option-4); }
 .answer-5 { background: var(--qc-option-5); }
+.answer-6 { background: var(--qc-option-2); }
+.answer-7 { background: var(--qc-option-3); }
+.answer-8 { background: var(--qc-option-0); }
+.answer-9 { background: var(--qc-option-1); }
 button.answer:hover:not(:disabled) { transform: scale(1.02); filter: brightness(1.08); }
 .attendee-stage.stage-question { padding: 0; justify-content: flex-start; }
 .attendee-question { display: flex; flex-direction: column; flex: 1; width: 100%; }

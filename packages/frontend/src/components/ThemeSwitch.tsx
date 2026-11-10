@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Icon } from './Icon';
 
 export function ThemeSwitch() {
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
   const [storageError, setStorageError] = useState(document.documentElement.dataset.themeStorage === 'unavailable');
   function choose(next: 'dark' | 'light') {
     document.documentElement.dataset.theme = next;

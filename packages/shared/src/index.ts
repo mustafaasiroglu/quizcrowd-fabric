@@ -25,6 +25,7 @@ export function setSurveyQuestionType(question: Question, type: SurveyQuestionTy
 }
 export interface SurveyResponse { options: number[]; other?: string }
 export type AnswerSubmission = { option: number; response?: never } | { response: SurveyResponse; option?: never };
+export const MAX_OPTIONS = 10;
 export const MAX_SURVEY_TEXT_LENGTH = 500;
 export const MAX_SURVEY_ANSWER_LENGTH = 2048;
 export function encodeSurveyResponse(response: SurveyResponse): string {
@@ -48,7 +49,7 @@ export function decodeSurveyResponse(value: string): SurveyResponse {
   parts.push(part);
   const result: SurveyResponse = { options: [] };
   for (const token of parts) {
-    if (/^o:[0-5]$/.test(token) && result.other === undefined) result.options.push(Number(token.slice(2)));
+    if (/^o:[0-9]$/.test(token) && Number(token.slice(2)) < MAX_OPTIONS && result.other === undefined) result.options.push(Number(token.slice(2)));
     else if (token.startsWith('t:') && token.length > 2 && result.other === undefined) result.other = token.slice(2);
     else throw new Error('Invalid persisted survey token.');
   }

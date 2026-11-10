@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Draft, GameView, Phase, Question, QuizSummary, SettingsView, SurveyResponse } from '@rayfin-app/shared';
-import { decodeSurveyResponse, encodeSurveyResponse, getAnswerDuration, MAX_TITLE_LENGTH, MAX_SURVEY_ANSWER_LENGTH, MAX_SURVEY_TEXT_LENGTH } from '@rayfin-app/shared';
+import { decodeSurveyResponse, encodeSurveyResponse, getAnswerDuration, MAX_OPTIONS, MAX_TITLE_LENGTH, MAX_SURVEY_ANSWER_LENGTH, MAX_SURVEY_TEXT_LENGTH } from '@rayfin-app/shared';
 
 export class Denied extends Error {}
 export class Conflict extends Error {}
@@ -15,7 +15,7 @@ export const draftSchema = z.object({
   answerDuration: z.object({ mode: z.enum(['same', 'custom']), seconds: z.number().int().min(5).max(120) }).strict().optional(),
   questions: z.array(z.object({
     text: z.string().trim().min(1).max(1000),
-    options: z.array(z.string().trim().min(1).max(300)).max(6)
+    options: z.array(z.string().trim().min(1).max(300)).max(MAX_OPTIONS)
       .refine((xs) => new Set(xs).size === xs.length, 'Options must be distinct'),
     correctIndex: z.number().int().min(0).nullable(),
     duration: z.number().int().min(5).max(120),
@@ -107,12 +107,17 @@ export function visibilityAllowed(draft: Draft, settings: Settings): void {
     throw new Denied('Public quizzes require enabled guest access and explicit acknowledgement.');
   }
 }
+export function createJoinCode(): string {
+  const suffix = randomInt(100000).toString().padStart(5, '0');
+  const check = [...suffix].reduce((sum, digit) => sum + Number(digit), 0) % 10;
+  return `${check}${suffix}`;
+}
 export function createGame(input: unknown, subject: string | null, settings: Settings, now: number): Game {
   const owner = signed(subject);
   const draft = draftSchema.parse(input);
   visibilityAllowed(draft, settings);
   return {
-    ...draft, answerDuration: getAnswerDuration(draft), id: randomUUID(), code: randomInt(1000000).toString().padStart(6, '0'),
+    ...draft, answerDuration: getAnswerDuration(draft), id: randomUUID(), code: createJoinCode(),
     owner, createdAt: now, phase: 'lobby', version: 0, questionIndex: -1,
     questionStartedAt: 0, revealStartedAt: 0, participants: [], answers: [],
   };
@@ -246,7 +251,7 @@ export function answer(
 }
 export function surveyResponse(question: Question, input: unknown): SurveyResponse {
   const parsed = z.object({
-    options: z.array(z.number().int().min(0).max(5)).max(6),
+    options: z.array(z.number().int().min(0).max(MAX_OPTIONS - 1)).max(MAX_OPTIONS),
     other: z.string().trim().min(1).max(MAX_SURVEY_TEXT_LENGTH)
       .refine(text => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(text), 'Invalid response characters').optional(),
   }).strict().parse(input);

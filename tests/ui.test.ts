@@ -58,15 +58,17 @@ beforeAll(async () => {
 }, 20000);
 
 describe('original QuizCrowd screen structure with Fabric authorization controls', () => {
-  it('uses an original four-tile monochrome mark with one outlined tile and an accessible home brand', () => {
+  it('uses filled square/circle/triangle/square shapes with a secondary final square and an accessible brand', () => {
     const brand = ui.renderBrand();
     expect(brand).toContain('aria-label="QuizCrowd home"');
     expect(brand).toContain('class="brand-wordmark"><span>Quiz</span><span>Crowd</span>');
     expect(brand).toContain('viewBox="0 0 24 24"');
     expect(brand).toContain('aria-hidden="true" focusable="false"');
-    expect(brand.match(/<rect /g)).toHaveLength(4);
-    expect(brand.match(/fill="none"/g)).toHaveLength(1);
-    expect(brand).toContain('stroke="currentColor" stroke-width="2"');
+    expect(brand.match(/<rect /g)).toHaveLength(2);
+    expect(brand).toContain('<circle cx="18" cy="6" r="4">');
+    expect(brand).toContain('<path d="M6 13 11 22H1Z">');
+    expect(brand).not.toContain('fill="none"');
+    expect(brand).toContain('class="brand-secondary"');
   });
   it('reuses the compact clock/value/s control and associates indented custom-duration help', () => {
     const shared = ui.renderEditor();
@@ -105,15 +107,22 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
   });
   it('renders host QR invitation only in the lobby and disables empty-game start', () => {
     const lobby = ui.renderGame({ ...game, players: [] }, true);
-    expect(lobby).toContain('Session Lobby');
+    expect(lobby).toContain('Waiting for Users');
+    expect(lobby).toContain('Share this code with attendees');
+    expect(lobby).toContain('0 attendees joined');
+    expect(lobby).toContain('class="game-context muted small">Source parity quiz</p>');
     expect(lobby).toContain('<svg');
-    expect(lobby).toMatch(/disabled=""[^>]*>Start Game/);
+    expect(lobby).toMatch(/disabled=""[^>]*>Start Quiz/);
+    expect(ui.renderGame({ ...game, mode: 'survey' }, true)).toContain('Start Survey');
+    expect(ui.renderGame(game, true)).toContain('1 attendee joined');
+    expect(ui.renderGame({ ...game, players: ['Alex', 'Sam'] }, true)).toContain('2 attendees joined');
     expect(ui.renderGame({ ...game, phase: 'leaderboard', rankings: [] }, true)).not.toContain('Scan to join');
   });
   it('uses the distinct attendee waiting screen without host invitation/control', () => {
     const lobby = ui.renderGame(game);
     expect(lobby).toContain('Waiting for host');
-    expect(lobby).not.toContain('Start Game');
+    expect(lobby).not.toContain('Start Quiz');
+    expect(lobby).not.toContain('Start Survey');
     expect(lobby).not.toContain('Copy invite');
   });
   it('never fabricates an answer key or score while wait_all is open', () => {
@@ -303,16 +312,16 @@ describe('pre-render two-theme bootstrap', () => {
     });
     return { theme: attributes['data-theme'], dataset };
   }
-  it('defaults to the original dark theme without consulting system or URL', async () => {
-    expect((await bootstrap(null)).theme).toBe('dark');
-    expect((await bootstrap('system')).theme).toBe('dark');
-    expect((await bootstrap('arbitrary')).theme).toBe('dark');
+  it('defaults to light without consulting system or URL', async () => {
+    expect((await bootstrap(null)).theme).toBe('light');
+    expect((await bootstrap('system')).theme).toBe('light');
+    expect((await bootstrap('arbitrary')).theme).toBe('light');
   });
   it('restores exactly the explicit dark/light preference before React loads', async () => {
     expect((await bootstrap('light')).theme).toBe('light');
     expect((await bootstrap('dark')).theme).toBe('dark');
   });
-  it('flags unavailable storage while still rendering dark', async () => {
-    expect(await bootstrap(null, true)).toEqual({ theme: 'dark', dataset: { themeStorage: 'unavailable' } });
+  it('flags unavailable storage while still rendering light', async () => {
+    expect(await bootstrap(null, true)).toEqual({ theme: 'light', dataset: { themeStorage: 'unavailable' } });
   });
 });

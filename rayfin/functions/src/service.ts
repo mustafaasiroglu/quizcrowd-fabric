@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { copyTitle, getAnswerDuration, MAX_SURVEY_TEXT_LENGTH } from '@rayfin-app/shared';
+import { copyTitle, getAnswerDuration, MAX_OPTIONS, MAX_SURVEY_TEXT_LENGTH } from '@rayfin-app/shared';
 import type { Store } from './sql-store.js';
 import {
   answer, control, createGame, Denied, Conflict, draftSchema, authoringDraftSchema, join, own, preview,
@@ -16,8 +16,8 @@ const requestSchema = z.object({
   version: z.number().int().nonnegative().optional(),
   action: z.enum(['start', 'next']).optional(),
   questionIndex: z.number().int().min(0).max(39).optional(),
-  option: z.number().int().min(0).max(5).optional(),
-  response: z.object({ options: z.array(z.number().int().min(0).max(5)).max(6), other: z.string().max(MAX_SURVEY_TEXT_LENGTH).optional() }).strict().optional(),
+  option: z.number().int().min(0).max(MAX_OPTIONS - 1).optional(),
+  response: z.object({ options: z.array(z.number().int().min(0).max(MAX_OPTIONS - 1)).max(MAX_OPTIONS), other: z.string().max(MAX_SURVEY_TEXT_LENGTH).optional() }).strict().optional(),
   draft: authoringDraftSchema.optional(),
 }).strict();
 

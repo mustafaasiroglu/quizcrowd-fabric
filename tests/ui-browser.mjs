@@ -81,6 +81,23 @@ async function pointerClick(expression) {
 async function input(selector, value) {
   await evaluate(`(() => { const element=document.querySelector(${JSON.stringify(selector)}); if (!element) throw new Error('Input missing'); const proto=element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto,'value').set.call(element,${JSON.stringify(value)}); element.dispatchEvent(new Event('input',{bubbles:true})); element.dispatchEvent(new Event('change',{bubbles:true})); })()`);
 }
+async function assertFilledForeground(selector) {
+  const { root } = await cdp.call('DOM.getDocument', {}, session);
+  const { nodeId } = await cdp.call('DOM.querySelector', { nodeId: root.nodeId, selector }, session);
+  assert.ok(nodeId, `Filled button missing: ${selector}`);
+  for (const forcedPseudoClasses of [[], ['hover'], ['focus-visible'], ['active']]) {
+    await cdp.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses }, session);
+    assert.equal(await evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(selector)})).color`), 'rgb(255, 255, 255)');
+  }
+  await cdp.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] }, session);
+  await evaluate(`document.querySelector(${JSON.stringify(selector)}).disabled=true`);
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(selector)})).color`), 'rgb(255, 255, 255)');
+  await evaluate(`document.querySelector(${JSON.stringify(selector)}).disabled=false`);
+}
+function assertJoinChecksum(code) {
+  assert.match(code, /^\d{6}$/);
+  assert.equal(Number(code[0]), [...code.slice(1)].reduce((sum, digit) => sum + Number(digit), 0) % 10);
+}
 async function screenshot(name, selector) {
   await evaluate('window.scrollTo(0,0)');
   const modal = await evaluate('!!document.querySelector("dialog[open]")');
@@ -215,14 +232,14 @@ try {
   await cdp.call('DOM.enable', {}, session);
   await cdp.call('CSS.enable', {}, session);
   await cdp.call('Network.enable', {}, session);
-  await cdp.call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }, { name: 'prefers-color-scheme', value: 'light' }] }, session);
+  await cdp.call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }, { name: 'prefers-color-scheme', value: 'dark' }] }, session);
 
   await check('join back does not disable home while its list refresh is pending', async () => {
     await navigate('?fixture=admin');
     await click('Join with Code');
     await evaluate('window.__quizcrowdFixture.defer("list")');
     await pointerClick('document.querySelector(\'[aria-label="Go back"]\')');
-    assert.equal(await evaluate('document.querySelector(".home-actions .primary").disabled'), false);
+    assert.equal(await evaluate('document.querySelector(".home-actions .quiz-action").disabled'), false);
     await evaluate('window.__quizcrowdFixture.release()');
   });
 
@@ -230,7 +247,7 @@ try {
     await cdp.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false }, session);
     for (const theme of ['dark', 'light']) {
       await navigate('?fixture=admin');
-      if (size === 'desktop' && theme === 'dark') await check('dark is default even with a light system preference', async () => assert.equal(await evaluate('document.documentElement.dataset.theme'), 'dark'));
+      if (size === 'desktop' && theme === 'dark') await check('light is default even with a dark system preference', async () => assert.equal(await evaluate('document.documentElement.dataset.theme'), 'light'));
       await check(`${theme}-${size}: original tile brand at compact sizes`, async () => {
         await navigate(); await click(theme === 'dark' ? 'Dark' : 'Light');
         const mark = await evaluate(`(() => {
@@ -238,16 +255,16 @@ try {
           const sizes=[16,20,24,32].map(size=>{svg.style.width=size+'px';svg.style.height=size+'px';const r=svg.getBoundingClientRect();return [r.width,r.height];});
           svg.style.removeProperty('width');svg.style.removeProperty('height');
           return {sizes,viewBox:svg.getAttribute('viewBox'),hidden:svg.getAttribute('aria-hidden'),name:svg.closest('button').getAttribute('aria-label'),
-            rectangles:[...svg.querySelectorAll('rect')].map(e=>[...e.attributes].map(a=>[a.name,a.value])),
+            shapes:[...svg.children].map(e=>({tag:e.tagName,fill:getComputedStyle(e).fill})),secondary:getComputedStyle(svg.querySelector('.brand-secondary')).color,
             color:getComputedStyle(svg).color,wordmarkColor:getComputedStyle(document.querySelector('.brand-wordmark > span')).color,shrink:getComputedStyle(svg).flexShrink};
         })()`);
         assert.deepEqual(mark.sizes,[16,20,24,32].map(size=>[size,size]));
         assert.equal(mark.viewBox,'0 0 24 24');assert.equal(mark.hidden,'true');assert.equal(mark.name,'QuizCrowd home');
-        assert.equal(mark.rectangles.length,4);assert.equal(mark.color,mark.wordmarkColor);assert.equal(mark.shrink,'0');
-        assert.equal(mark.rectangles.filter(attributes=>attributes.some(([name,value])=>name==='fill'&&value==='none')).length,1);
+        assert.deepEqual(mark.shapes.map(e=>e.tag),['rect','circle','path','rect']);assert.equal(mark.color,mark.wordmarkColor);assert.equal(mark.shrink,'0');
+        assert.deepEqual(mark.shapes.map(e=>e.fill),[mark.color,mark.color,mark.color,mark.secondary]);assert.notEqual(mark.secondary,mark.color);
         await inspectScreen(`${theme}-${size}-tile-brand`);await screenshot(`${theme}-${size}-brand-header`,'.app-toolbar');
         if(theme==='light'&&size==='desktop') {
-          const svg=await evaluate(`(() => {const source=document.querySelector('.brand-mark'),copy=source.cloneNode(true);copy.removeAttribute('class');copy.removeAttribute('aria-hidden');copy.removeAttribute('focusable');copy.setAttribute('role','img');copy.setAttribute('aria-label','QuizCrowd four-tile mark');copy.style.color=getComputedStyle(source).color;copy.setAttribute('width','128');copy.setAttribute('height','128');return new XMLSerializer().serializeToString(copy);})()`);
+          const svg=await evaluate(`(() => {const source=document.querySelector('.brand-mark'),copy=source.cloneNode(true);copy.querySelector('.brand-secondary').style.color=getComputedStyle(source.querySelector('.brand-secondary')).color;copy.removeAttribute('class');copy.removeAttribute('aria-hidden');copy.removeAttribute('focusable');copy.setAttribute('role','img');copy.setAttribute('aria-label','QuizCrowd square circle triangle square mark');copy.style.color=getComputedStyle(source).color;copy.setAttribute('width','128');copy.setAttribute('height','128');return new XMLSerializer().serializeToString(copy);})()`);
           await writeFile(join(directory,'quizcrowd-mark.svg'),svg);
           await screenshot('quizcrowd-mark','.brand-mark');
         }
@@ -326,6 +343,64 @@ try {
           }
         }
       });
+      await check(`${theme}-${size}: ten-option authoring, lobby and attendee results`,async()=>{
+        for(const mode of ['quiz','survey']) {
+          const label=`${theme}-${size}-ten-${mode}`;
+          if(size==='mobile')await cdp.call('Emulation.setDeviceMetricsOverride',{width:320,height:740,deviceScaleFactor:1,mobile:false},session);
+          await navigate();await click(theme==='dark'?'Dark':'Light');await click(mode==='quiz'?'New Live Quiz':'New Live Survey');
+          await input('#quiz-title',`Ten-choice ${mode}`);await input('#question-0','Choose a topic from ten options');
+          if(mode==='survey')await input('.question-type','multiple');
+          for(let index=0;index<10;index++) {
+            if(index>=4)await click('Add option');
+            await input(`#option-0-${index}`,`Choice ${index+1}${index===9?' | \\\\ '+ 'long-text-'.repeat(20):''}`);
+          }
+          assert.equal(await evaluate('document.querySelectorAll(".option-editor input:not([type=radio])").length'),10);
+          assert.equal(await evaluate('[...document.querySelectorAll("button")].find(e=>e.textContent==="10 options maximum").disabled'),true);
+          await inspectScreen(`${label}-long-option-editor`);
+          await click('Remove question 1 option 10');await click('Add option');await input('#option-0-9','Choice 10 | \\ literal');
+          if(mode==='quiz')await pointerClick('document.querySelector(\'[aria-label="Question 1, correct option 10"]\')');
+          else await click('Add Other to question 1');
+          await assertFilledForeground('.editor-actions .primary');
+          await inspectScreen(`${label}-editor`);await screenshot(`${label}-editor`);
+          await click('Save & Open Lobby');await until('!!document.querySelector(".host-lobby")');
+          const saved=await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="create").draft.questions[0]');
+          assert.equal(saved.options.length,10);assert.equal(saved.correctIndex,mode==='quiz'?9:null);
+          assert.equal(await evaluate('document.querySelector(".host-lobby h1").textContent'),'Waiting for Users');
+          assert.equal(await evaluate('document.querySelector(".game-context").textContent'),`Ten-choice ${mode}`);
+          assertJoinChecksum(await evaluate('document.querySelector(".session-code strong").textContent'));
+          assert.ok(await evaluate('document.querySelector(".host-lobby").textContent.includes("Share this code with attendees")'));
+          assert.ok(await evaluate('document.querySelector(".host-lobby").textContent.includes("4 attendees joined")'));
+          await assertFilledForeground('.host-lobby .primary');
+          await inspectScreen(`${label}-lobby`);await screenshot(`${label}-lobby`);
+          await click(mode==='quiz'?'Start Quiz':'Start Survey');await until('!!document.querySelector(".host-stage.stage-question")');
+          assert.equal(await evaluate('document.querySelectorAll(".answers .answer:not(.other-choice)").length'),10);
+          assert.notEqual(await evaluate('getComputedStyle(document.querySelector(".answer-9")).backgroundColor'),'rgba(0, 0, 0, 0)');
+          await inspectScreen(`${label}-host`);await screenshot(`${label}-host`);
+          await navigate(`join/?code=600123&example=${mode}-ten`);
+          await input('#nickname','Ten-choice attendee');await click('Join Game');await until('!!document.querySelector(".attendee-stage.stage-question")');
+          if(mode==='quiz') {
+            assert.equal(await evaluate('document.querySelectorAll("button.answer").length'),10);
+            await evaluate('document.querySelector(".answer-9").focus()');
+            await inspectScreen(`${label}-attendee`);await screenshot(`${label}-attendee`);
+            await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',text:'\r',windowsVirtualKeyCode:13},session);
+            await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13},session);
+          } else {
+            assert.equal(await evaluate('document.querySelectorAll(".survey-choice input[type=checkbox]").length'),11);
+            for(const index of [0,9,10])await pointerClick(`document.querySelectorAll(".survey-choice input")[${index}]`);
+            await input('.survey-written-response textarea','Text | with \\ literal');
+            await inspectScreen(`${label}-attendee`);await screenshot(`${label}-attendee`);
+            await click('Submit response');
+          }
+          await until('!!document.querySelector(".submitted")');
+          const submitted=await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="answer")');
+          if(mode==='quiz')assert.equal(submitted.option,9);
+          else assert.deepEqual(submitted.response,{options:[0,9],other:'Text | with \\ literal'});
+          await phase('reveal');
+          assert.equal(await evaluate('document.querySelectorAll(".distribution li").length'),mode==='quiz'?10:11);
+          await inspectScreen(`${label}-results`);await screenshot(`${label}-results`);
+        }
+        if(size==='mobile')await cdp.call('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false},session);
+      });
       await check(`${theme}-${size}: settings layout, inline duration and visible choices`, async () => {
         await navigate(); await click(theme === 'dark' ? 'Dark' : 'Light'); await click('New Live Quiz');
         const layout = await evaluate(`(() => {
@@ -382,7 +457,7 @@ try {
         const saved = await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="create").draft');
         assert.deepEqual(saved.answerDuration, {mode:'same',seconds:35});
         assert.equal(saved.lateJoin, true); assert.equal(saved.showAnswer, 'after_response');
-        await click('Start Game'); await until('!!document.querySelector(".host-stage.stage-question")');
+        await click('Start Quiz'); await until('!!document.querySelector(".host-stage.stage-question")');
         await pointerClick('document.querySelector(".small-brand")'); await until('!!document.querySelector(".session-open")');
         await pointerClick('document.querySelector(".session-open")'); await until('!!document.querySelector(".readonly-notice")');
         assert.equal(await evaluate('document.querySelector("#shared-duration").value'), '35');
@@ -431,10 +506,10 @@ try {
         assert.equal(await evaluate('document.querySelectorAll(".home-actions button > svg").length'), 3);
         await inspectScreen(`${label}-home`);
         const { root } = await cdp.call('DOM.getDocument', {}, session);
-        const { nodeId } = await cdp.call('DOM.querySelector', { nodeId: root.nodeId, selector: '.home-actions .primary' }, session);
+        const { nodeId } = await cdp.call('DOM.querySelector', { nodeId: root.nodeId, selector: '.home-actions .quiz-action' }, session);
         for (const forcedPseudoClasses of [[], ['hover'], ['focus'], ['active']]) {
           await cdp.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses }, session);
-          assert.equal(await evaluate('getComputedStyle(document.querySelector(".home-actions .primary")).color'), 'rgb(255, 255, 255)');
+          assert.equal(await evaluate('getComputedStyle(document.querySelector(".home-actions .quiz-action")).color'), await evaluate('getComputedStyle(document.querySelector(".brand-wordmark > span")).color'));
         }
         await cdp.call('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] }, session);
         const actionNodes = [];
@@ -570,10 +645,11 @@ try {
         assert.equal(await evaluate('document.querySelectorAll(".qr-container svg").length'), 1);
         assert.equal(await evaluate('location.pathname'), '/host/lobby/');
         await cdp.call('Page.reload', {}, session); await until('!!document.querySelector(".host-lobby")');
-        assert.equal(await evaluate('document.querySelector(".session-code strong").textContent'), '000123');
-        assert.equal(await evaluate('new URL(document.querySelector(".join-link a").href).searchParams.get("code")'), '000123');
+        const code = await evaluate('document.querySelector(".session-code strong").textContent');
+        assertJoinChecksum(code);
+        assert.equal(await evaluate('new URL(document.querySelector(".join-link a").href).searchParams.get("code")'), code);
         await inspectScreen(`${label}-host-lobby`); await screenshot(`${label}-host-lobby`);
-        await click('Start Game'); await until('!!document.querySelector(".host-stage.stage-question")');
+        await click('Start Quiz'); await until('!!document.querySelector(".host-stage.stage-question")');
         assert.equal(await evaluate('location.pathname'), '/host/game/');
         assert.equal(await evaluate('document.querySelectorAll(".answers button").length'), 0);
         await inspectScreen(`${label}-host-question`); await screenshot(`${label}-host-question`);
@@ -838,7 +914,7 @@ try {
     await until('document.querySelector("[role=alert]")?.textContent.includes("Session not found")');
     await evaluate('history.back()'); await until('!!document.querySelector("#session-code")');
     await evaluate('history.back()'); await until('!!document.querySelector(".home-screen")');
-    assert.equal(await evaluate('document.querySelector(".home-actions .primary").disabled'), false);
+    assert.equal(await evaluate('document.querySelector(".home-actions .quiz-action").disabled'), false);
     await evaluate('history.forward()'); await until('!!document.querySelector("#session-code")');
     await evaluate('history.forward()'); await until('!!document.querySelector("#nickname")');
     await pointerClick('document.querySelector(\'[aria-label="Go back"]\')');
@@ -953,9 +1029,9 @@ try {
     await cdp.call('Page.addScriptToEvaluateOnNewDocument', { source: `Object.defineProperty(window,'localStorage',{configurable:true,get(){throw new DOMException('Storage blocked','SecurityError')}});` }, session);
     await navigate('?fixture=signed-out');
     await until('!!document.querySelector(".theme-notice")');
-    assert.equal(await evaluate('document.documentElement.dataset.theme'), 'dark');
-    await click('Light');
     assert.equal(await evaluate('document.documentElement.dataset.theme'), 'light');
+    await click('Dark');
+    assert.equal(await evaluate('document.documentElement.dataset.theme'), 'dark');
     assert.ok(await evaluate('document.querySelector(".theme-notice").textContent.includes("reset on reload")'));
   });
   await check('no runtime exception and no cloud or third-party network access in UI test', async () => {

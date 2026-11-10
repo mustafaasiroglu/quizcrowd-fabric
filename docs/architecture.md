@@ -35,7 +35,7 @@ Settings is a singleton with `AnonymousEnabled` (initially false) and
 `GuestEpoch` (initially zero). Administrators is populated only by a trusted
 database administrator. Audit records global guest-access changes.
 
-Games uses a UUID key, cryptographically generated six-digit numeric string code,
+Games uses a UUID key, a six-digit numeric string code,
 indexed owner subject and one
 JSON aggregate (`ISJSON` constrained). Each aggregate stores quiz/survey
 questions, response options, answer keys, visibility and game settings,
@@ -43,6 +43,16 @@ participants, credential hashes/expiry, individual responses, scores, streaks,
 question timing and current phase. JSON is a database storage format, not a
 client cache or production file store. It is never returned wholesale to an
 attendee.
+
+New codes use Node's cryptographic `randomInt(100000)` for five uniformly random
+digits (zero-padded), prefixed by their digit sum modulo 10. For example, suffix
+`00123` produces `600123`. This is a transcription check, **not** authentication,
+anti-enumeration or brute-force protection: the valid code space is only 100,000
+(smaller than six unconstrained digits). Existing rate limits, attendee caps,
+authorization and private capability tokens remain necessary and unchanged.
+Existing non-checksummed numeric codes, ten-character aliases and UUID invitations
+still resolve by database lookup; no checksum filter rejects old invitations and
+no migration or regeneration of stored codes is performed.
 
 The code is routing information, never a credential. `UQ_QuizCrowdCode` enforces
 persistent uniqueness. A real SQL code-uniqueness violation rolls back and retries
@@ -253,9 +263,13 @@ App-level anonymous capabilities cannot access internal sessions.
 - **Session recovery:** Tab session storage preserves the attendee credential
   across reloads. A lost guest token cannot be recovered; 12-hour expiry is
   fixed until a signed-in participant rejoins and rotates it.
-- **Authoring scope:** Manual multiple-choice authoring only. Two to four options
-  in the UI, preserving existing five/six-option questions; two to six validated by the server. No images, open-ended
-  responses, AI generation, import/export or automatic survey generation.
+- **Authoring scope:** Manual authoring with up to ten normal choices per Quiz
+  or Survey question, enforced in the UI, request schema and server. Quiz answers
+  and Survey selection IDs cover 0–9. Survey Other is supplemental, not one of
+  those ten choices; Free Text permits zero normal choices. The existing
+  single-field Survey encoding, 500-unit text and 2048-unit encoded-answer limits
+  are unchanged. No images, AI generation, import/export or automatic survey
+  generation.
 - **Trusted publisher:** The app item owner can change code and has external
   SQL permissions. Protect deployment rights; application checks cannot defend
   against a malicious publisher with database access.

@@ -4,7 +4,7 @@ import { copyTitle } from '@rayfin-app/shared';
 const parameters = new URLSearchParams(location.search);
 const previous = JSON.parse(sessionStorage.getItem('quizcrowd-test-fixture') ?? 'null');
 const requestedExample = parameters.get('example');
-const example = ['survey-multiple', 'survey-single', 'survey-other-only', 'survey-legacy-single-other'].includes(requestedExample) ? requestedExample : previous?.example;
+const example = ['survey-multiple', 'survey-single', 'survey-other-only', 'survey-legacy-single-other', 'quiz-ten', 'survey-ten'].includes(requestedExample) ? requestedExample : previous?.example;
 const stored = requestedExample && example !== previous?.example ? null : previous;
 let authenticated = stored?.authenticated ?? parameters.get('fixture') !== 'signed-out';
 const admin = stored?.admin ?? parameters.get('fixture') !== 'creator';
@@ -34,7 +34,15 @@ let myOption;
 let myResponse;
 let version = 1;
 const players = ['Alex', 'Sam', 'Taylor', 'Jordan'];
-if (!stored && example) {
+if (!stored && example?.endsWith('-ten')) {
+  currentCode = '600123'; // Fixed checksum-valid test invitation, not the production random generator.
+  const survey = example === 'survey-ten';
+  currentDraft = { ...draft, title: survey ? 'Ten-choice Survey demo' : 'Ten-choice Quiz demo', mode: survey ? 'survey' : 'quiz',
+    lateJoin: true, questions: [{ text: 'Which of these ten topics interests you?',
+      options: Array.from({ length: 10 }, (_, i) => `Topic ${i + 1}${i === 9 ? ' - literal | and \\ characters. ' + 'Long topic text '.repeat(12) : ''}`),
+      correctIndex: survey ? null : 9, duration: 120, ...(survey ? { survey: { other: true, allowMultiple: true } } : {}) }] };
+  phase = location.pathname.startsWith('/host/lobby/') ? 'lobby' : 'question';
+} else if (!stored && example) {
   currentDraft = { ...draft, title: example === 'survey-multiple' ? 'Live Survey demo - multiple and Other' : 'Live Survey demo - written feedback',
     mode: 'survey', lateJoin: true, questions: [{ text: 'What should we include in our next event?',
       options: example === 'survey-other-only' ? [] : ['Product sessions', 'Workshops'],
@@ -57,6 +65,18 @@ function activate(id, record) {
 function persist() {
   records.set(activeId, snapshot());
   sessionStorage.setItem('quizcrowd-test-fixture', JSON.stringify({ example, authenticated, admin, owner, settings, ...snapshot(), activeId, records: [...records] }));
+}
+function nextDemoCode() {
+  const used = new Set([currentCode, ...[...records.values()].map(record => record.currentCode)]);
+  let candidate = Number(currentCode.slice(1));
+  for (let attempt = 0; attempt < 100000; attempt++) {
+    candidate = (candidate + 1) % 100000;
+    const suffix = candidate.toString().padStart(5, '0');
+    const check = [...suffix].reduce((sum, digit) => sum + Number(digit), 0) % 10;
+    const code = `${check}${suffix}`;
+    if (!used.has(code)) return code;
+  }
+  throw new Error('Demo join-code space exhausted.');
 }
 function session() { return { isAuthenticated: authenticated, isAnonymous: !authenticated, user: authenticated ? { id: 'test-only-verified-subject' } : undefined }; }
 function view(attendee) {
@@ -134,14 +154,7 @@ export async function call(_connection, request, token = '', asGuest = false) {
     case 'resolve': return { code: currentCode };
     case 'duplicate': {
       records.set(activeId, snapshot());
-      const used = new Set([...records.values()].map(record => record.currentCode));
-      let candidate = Number(currentCode);
-      for (let attempt = 0; attempt < 1000000; attempt++) {
-        candidate = (candidate + 1) % 1000000;
-        if (!used.has(candidate.toString().padStart(6, '0'))) break;
-      }
-      const code = candidate.toString().padStart(6, '0');
-      if (used.has(code)) throw new Error('Demo join-code space exhausted.');
+      const code = nextDemoCode(); // Predictable test-only suffix; production uses Node crypto.randomInt.
       currentDraft = { ...structuredClone(currentDraft), title: copyTitle(currentDraft.title), visibility: 'internal', publicAcknowledged: false };
       activeId = crypto.randomUUID(); currentCode = code; createdAt = Date.now();
       phase = 'lobby'; questionIndex = -1; version = 0; myOption = undefined; myResponse = undefined; deleted = false;
@@ -150,6 +163,7 @@ export async function call(_connection, request, token = '', asGuest = false) {
     }
     case 'create':
       if (!authenticated) throw new Error('Sign in to create.');
+      currentCode = nextDemoCode();
       currentDraft = structuredClone(request.draft); phase = 'lobby'; questionIndex = 0; myOption = undefined; myResponse = undefined; deleted = false;
       return { id: activeId, code: currentCode };
     case 'host':

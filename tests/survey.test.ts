@@ -32,7 +32,7 @@ describe('versioned single-field survey encoding', () => {
     saved.answers[0].format = 'future-unknown-format';
     expect(() => view(saved, alice.token, null, settings, 3000)).toThrow('Unsupported persisted');
   });
-  it.each(['', 'o:0|o:0', 'o:6', 't:', 't:x|o:0', 't:x|t:y', 't:x\\', 't:x\\q', 'unversioned text', 't:' + 'x'.repeat(501)])('fails explicitly on malformed stored encoding %j', encoded => {
+  it.each(['', 'o:0|o:0', 'o:10', 't:', 't:x|o:0', 't:x|t:y', 't:x\\', 't:x\\q', 'unversioned text', 't:' + 'x'.repeat(501)])('fails explicitly on malformed stored encoding %j', encoded => {
     expect(() => decodeSurveyResponse(encoded)).toThrow();
   });
 });

@@ -1,12 +1,12 @@
 import sql from 'mssql';
 import { describe, expect, it, vi } from 'vitest';
 import { execute } from '../rayfin/functions/src/service';
-import { authorDraft, createGame, draftSchema } from '../rayfin/functions/src/domain';
+import { authorDraft, createGame, createJoinCode, draftSchema } from '../rayfin/functions/src/domain';
 import { getAnswerDuration, getSurveyQuestionType, normalizeSurveyAuthoring, setAnswerDuration, setSurveyQuestionType } from '../packages/shared/src/index';
 import { isJoinCodeCollision, retryJoinCode, type Store, type UnitOfWork } from '../rayfin/functions/src/sql-store';
 
-const random = vi.hoisted(() => ({ value: 7 }));
-vi.mock('node:crypto', async (original) => ({ ...await original<typeof import('node:crypto')>(), randomInt: () => random.value++ }));
+const random = vi.hoisted(() => ({ value: 7, bound: 0 }));
+vi.mock('node:crypto', async (original) => ({ ...await original<typeof import('node:crypto')>(), randomInt: (bound: number) => { random.bound = bound; return random.value++; } }));
 const settings = { anonymousEnabled: false, guestEpoch: 0 };
 const draft = { title: 'Team session', mode: 'quiz', visibility: 'internal', publicAcknowledged: false,
   lateJoin: false, showAnswer: 'wait_all', questions: [{ text: 'Question', options: ['A', 'B'], correctIndex: 0, duration: 20 }] };
@@ -32,6 +32,53 @@ function fixture(mode: 'quiz' | 'survey' = 'quiz') {
   return { store, legacy, games: () => games, game: () => games[0] };
 }
 describe('six-digit codes and owner authoring transactions (test store)', () => {
+  it('prefixes all five random digits with their sum modulo ten, preserving zeros', () => {
+    for (let suffix = 0; suffix < 100000; suffix++) {
+      random.value = suffix;
+      const code = createJoinCode();
+      expect(code).toMatch(/^\d{6}$/);
+      expect(code.slice(1)).toBe(suffix.toString().padStart(5, '0'));
+      expect(Number(code[0])).toBe([...code.slice(1)].reduce((sum, digit) => sum + Number(digit), 0) % 10);
+    }
+    expect(random.bound).toBe(100000);
+    random.value = 7;
+  });
+  it.each(['quiz', 'survey'] as const)('persists ten %s options, validates index 9 and rejects eleven without mutation', async mode => {
+    const f = fixture(mode), options = Array.from({ length: 10 }, (_, i) => `Choice ${i + 1} | \\`);
+    const revised = { ...authorDraft(f.game()), questions: [{ ...f.game().questions[0], options,
+      correctIndex: mode === 'quiz' ? 9 : null, ...(mode === 'survey' ? { survey: { other: true, allowMultiple: true } } : {}) }] };
+    const before = JSON.stringify(f.games());
+    for (const command of ['create', 'edit']) {
+      await expect(execute(f.store, { command, id: f.game().id, draft: { ...revised,
+        questions: [{ ...revised.questions[0], options: [...options, 'Eleventh'] }] } }, 'owner', '')).rejects.toThrow();
+    }
+    expect(JSON.stringify(f.games())).toBe(before);
+    await execute(f.store, { command: 'edit', id: f.game().id, draft: revised }, 'owner', '');
+    expect(await execute(f.store, { command: 'edit', id: f.game().id }, 'owner', '')).toMatchObject({ draft: revised });
+    const copy = await execute(f.store, { command: 'duplicate', id: f.game().id }, 'owner', '') as { id: string };
+    expect(f.games().find(game => game.id === copy.id)?.questions).toEqual(revised.questions);
+    const alice = await execute(f.store, { command: 'join', id: f.game().code, nickname: 'Alice' }, 'a', '', 1000) as { token: string };
+    const bob = await execute(f.store, { command: 'join', id: f.game().id, nickname: 'Bob' }, 'b', '', 1000) as { token: string };
+    await execute(f.store, { command: 'control', id: f.game().id, action: 'start', version: f.game().version }, 'owner', '', 2000);
+    const request = { command: 'answer', id: f.game().id, questionIndex: 0 };
+    for (const selection of [{ option: 10 }, { response: { options: [10] } },
+      { response: { options: Array(11).fill(9) } }, { response: { options: [9, 9] } }]) {
+      await expect(execute(f.store, { ...request, ...selection }, 'a', alice.token, 3000)).rejects.toThrow();
+    }
+    const selection = mode === 'quiz' ? { option: 9 } : { response: { options: Array.from({ length: 10 }, (_, i) => i), other: 'Literal | \\ text' } };
+    await Promise.all(Array.from({ length: 4 }, () => execute(f.store, { ...request, ...selection }, 'a', alice.token, 3000)));
+    expect(f.game().answers).toHaveLength(1);
+    expect(f.game().answers[0].points).toBe(mode === 'quiz' ? 1475 : 0);
+    if (mode === 'survey') {
+      expect(f.game().answers[0].option).toBe('o:0|o:1|o:2|o:3|o:4|o:5|o:6|o:7|o:8|o:9|t:Literal \\| \\\\ text');
+      expect(await execute(f.store, { command: 'state', id: f.game().id }, 'a', alice.token, 3000)).toMatchObject({ myResponse: selection.response });
+    }
+    await execute(f.store, { ...request, ...(mode === 'quiz' ? { option: 0 } : { response: { options: [9] } }) }, 'b', bob.token, 3100);
+    const host = await execute(f.store, { command: 'host', id: f.game().id }, 'owner', '', 3100) as { distribution: number[] };
+    expect(host.distribution).toHaveLength(10);
+    expect(host.distribution[9]).toBe(mode === 'quiz' ? 1 : 2);
+    expect(JSON.stringify(host)).not.toContain('Literal');
+  });
   it('switches Survey types using existing flags and restores draft choices without changing the source', () => {
     const source = fixture('survey').game().questions[0], before = structuredClone(source);
     expect(getSurveyQuestionType(source)).toBe('single');
@@ -215,7 +262,8 @@ describe('six-digit codes and owner authoring transactions (test store)', () => 
   it('creates numeric string codes with leading zeros and keeps IDs private routing identifiers', async () => {
     random.value = 7;
     const f = fixture();
-    expect(f.game().code).toBe('000007');
+    expect(f.game().code).toBe('700007');
+    f.game().code = '000007'; // Existing non-checksummed numeric codes remain valid invitations.
     expect(f.game().id).not.toBe(f.game().code);
     expect(await execute(f.store, { command: 'resolve', id: '000007' }, 'attendee', '')).toEqual({ code: '000007' });
     expect(await execute(f.store, { command: 'resolve', id: f.legacy }, 'attendee', '')).toEqual({ code: '000007' });
@@ -317,6 +365,24 @@ describe('SQL uniqueness retry boundary', () => {
   function collision(number = 2627, name = 'UQ_QuizCrowdCode') {
     const error = new sql.RequestError(`Violation of ${name}`, 'EREQUEST'); error.number = number; return error;
   }
+  it('rolls back a collided insert and serializes concurrent creates without changing existing records (test store)', async () => {
+    const f = fixture(), bytes = JSON.stringify(f.game()), codes: string[] = [];
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const store: Store = { transact: work => retryJoinCode(() => f.store.transact(tx => work({ ...tx,
+      save: async (game, create) => {
+        await tx.save(game, create);
+        if (create) { codes.push(game.code); if (codes.length === 1) throw collision(); }
+      },
+    }))) };
+    try {
+      await Promise.all([0, 1].map(() => execute(store, { command: 'create', draft }, 'owner', '')));
+      expect(codes).toHaveLength(3);
+      expect(f.games()).toHaveLength(3);
+      expect(f.games().map(game => game.code)).not.toContain(codes[0]);
+      expect(new Set(f.games().map(game => game.code)).size).toBe(3);
+      expect(JSON.stringify(f.game())).toBe(bytes);
+    } finally { warning.mockRestore(); }
+  });
   it('retries only real Code uniqueness failures after full rollback and regenerates code', async () => {
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
