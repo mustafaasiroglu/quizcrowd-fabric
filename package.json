@@ -27,11 +27,15 @@
     "test:ui": "node tests/ui-browser.mjs",
     "check": "npm run typecheck && npm test && npm run build",
     "typecheck": "tsc -b && npm run -w rayfin-functions build",
-    "rayfin:up": "rayfin up"
+    "rayfin:up": "rayfin up",
+    "deploy": "node scripts/deploy.mjs"
   },
   "devDependencies": {
     "@microsoft/rayfin-cli": "1.36.2",
     "@microsoft/rayfin-guide": "1.36.2",
+    "@microsoft/rayfin-client": "1.36.2",
+    "@microsoft/rayfin-auth-provider-fabric": "1.36.2",
+    "mssql": "12.6.0",
     "typescript": "5.8.3",
     "vitest": "4.1.12",
     "vite": "8.3.5"

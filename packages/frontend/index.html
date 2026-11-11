@@ -7,12 +7,19 @@
     <meta name="theme-color" content="#f3f1ff" />
     <script>
       (() => {
-        let theme = "light";
+        let saved;
         try {
-          const saved = localStorage.getItem("quizcrowd-theme");
-          if (saved === "dark" || saved === "light") theme = saved;
+          saved = localStorage.getItem("quizcrowd-theme");
         } catch {
           document.documentElement.dataset.themeStorage = "unavailable";
+        }
+        let theme = saved === "dark" || saved === "light" ? saved : "light";
+        if (saved !== "dark" && saved !== "light") {
+          try {
+            if (typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches) theme = "dark";
+          } catch {
+            document.documentElement.dataset.themeMedia = "unavailable";
+          }
         }
         document.documentElement.setAttribute("data-theme", theme);
       })();

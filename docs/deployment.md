@@ -13,8 +13,8 @@ resources; local checks and CI do not deploy anything automatically.
 | Deployment identity | Workspace/item permissions sufficient to create and update the app; only the Functions item owner can modify/publish its Functions |
 | Runtime owner | The Fabric App item owner's identity is currently used for external SQL tokens; grant that identity access to the application SQL database |
 | Signed-in users | Entra users in the app's tenant with **Run and interact / Read and execute** permission on the Fabric App item |
-| Local tooling | Node.js 24 LTS, npm, Git, and Azure Functions Core Tools v4 for local Functions debugging |
-| Application storage | A writable **SQL Database in Microsoft Fabric**, not its read-only analytics endpoint, Warehouse or Lakehouse |
+| Local tooling | Node.js 24 LTS, npm, Git and Azure CLI; Azure Functions Core Tools v4 only for local Functions debugging |
+| Application storage | Automatically created writable **SQL Database in Microsoft Fabric**, or an explicitly selected existing private SQL database; not an analytics endpoint, Warehouse or Lakehouse |
 
 Documentation checked against Rayfin **1.36.2** and Microsoft Learn in November
 2026. Fabric Apps is preview; verify current constraints before distribution:
@@ -28,7 +28,95 @@ Documentation checked against Rayfin **1.36.2** and Microsoft Learn in November
 No Azure subscription resource, public endpoint, or capacity should be created
 merely to run the local unit tests.
 
-## 1. Create your template copy
+## Three-step install
+
+After copying this template, installing dependencies with Node 24 and checking
+the prerequisites above:
+
+1. **Create an App in the selected Fabric workspace.** Use a workspace with an
+   already approved, supported capacity. Deploy as the App owner; the same user
+   must be authorized to create/administer its private SQL Database. Note the
+   workspace GUID and exact App display name.
+2. **Run the deployment command from VS Code/the project terminal:**
+
+   ```powershell
+   az login
+   npx rayfin login
+   npm run deploy -- --workspace-id "<workspace-GUID>" --item-name "<App name>" --create-database --bootstrap-admin-self
+   ```
+
+   Azure CLI and Rayfin must select the same publisher user/tenant. The explicit
+   `--create-database` flag approves a new SQL item consuming the workspace's
+   existing capacity/storage. `--bootstrap-admin-self` approves initial
+   application-admin bootstrap; it is not a first-browser-user rule.
+3. **Test the App in the Fabric portal.** Open that same App item, create an
+   internal Quiz and Survey, and follow the [release gates](#release-gates).
+   Attendees need the documented App Execute permissions, not SQL access.
+
+The wrapper invokes **real pinned Rayfin 1.36.2 commands**, not a substitute
+deployment service. It verifies the existing workspace/App, creates or resumes
+the private SQL item through the documented Fabric SQL REST API, applies runtime
+settings and the caller-bound identity model, initializes both SQL scripts, binds
+encrypted SQL coordinates using `rayfin secret set --stdin`, then performs full
+`rayfin up` publication including Functions and static content. Microsoft
+[documents `rayfin up` as publishing an App](https://learn.microsoft.com/en-us/fabric/apps/deploy-app);
+there is no separate Power BI workspace-App publishing step for this Fabric App
+item. A content-only `up staticapp deploy` is not a replacement for full runtime
+settings application.
+
+The private application database is created **automatically alongside the App**;
+it remains separate from the Rayfin-managed identity database so custom SQL is
+not overwritten by model deployment. New databases use
+`Latin1_General_100_BIN2_UTF8`; existing database collations are not changed.
+No new capacity, tenant policy, anonymous permission or SQL user/grant is created.
+Runtime SQL tokens still belong to the App owner. If that owner differs from the
+publisher/database creator, stop and arrange the separately approved
+least-privilege access described below; the wrapper does not grant it.
+
+For an existing deployment, **reuse its existing private SQL item**, never create
+a replacement:
+
+```powershell
+npm run deploy -- --workspace-id "<workspace-GUID>" --item-name "<App name>" --database-id "<existing-private-SQL-GUID>"
+```
+
+Later deployments can omit both database flags because the ignored
+`rayfin/.quizcrowd-bindings.json` records the app-scoped database ID. Keep that
+local binding for repeat deployments, or pass the reviewed existing ID on a new
+machine. The wrapper refuses ambiguous same-name database adoption, replacing a
+known binding, legacy-code rewrites and administrator bootstrap after a different
+admin already exists. It preserves current guest configuration/epochs, audit
+rows and game documents. Bootstrap reuses a verified caller-scoped DAB subject,
+never a decoded JWT or typed subject.
+
+Creation uses documented
+[Fabric SQL Database creation](https://learn.microsoft.com/en-us/rest/api/fabric/sqldatabase/items/create-sql-database)
+and long-running-operation polling. An accepted operation is recorded before
+polling, so reruns resume it; an ambiguous network outcome stops instead of
+blindly creating another database. Do not delete the local binding to retry a
+failed creation. Inspect the selected workspace and bind the actual created ID.
+An interrupted deployment may leave an initialized but unpublished App; rerun
+the same command after resolving the reported failure. A stale
+`rayfin/.quizcrowd-deploy.lock` may be removed only after verifying its recorded
+process is no longer running.
+
+The existing-resource initialization/publication path is live-tested; new-item
+creation/LRO behavior is covered with isolated HTTP tests, **not a paid clean
+installation in another workspace**. Anonymous attendance remains blocked on the
+gateway/request-bound response capability described below; this installation
+command does not certify it.
+
+See the [anonymous attendance evidence and architecture decision](anonymous-attendance.md)
+for the SQL-trigger/INSERT-only investigation, the missing requester-bound
+response channel, and the still-unapproved external attendance alternative.
+
+## Advanced/manual setup and legacy upgrades
+
+The following lower-level steps are retained for existing deployments,
+least-privilege administration and controlled migrations. They are **not**
+required manual database creation steps for the three-step installation above.
+
+### 1. Create your template copy
 
 Use GitHub's **Use this template**, clone the resulting repository, and keep the
 lockfile. Review `LICENSING.md`: being public or marked as a template does not
@@ -48,7 +136,7 @@ The lockfile pins versions and integrity hashes without environment-specific
 registry download URLs. The committed `.npmrc` preserves that portable format;
 `npm ci` resolves packages through your configured trusted npm registry.
 
-## 2. Create and initialize private application storage
+### 2. Manually bind and initialize private application storage
 
 In the selected workspace, explicitly create a **SQL Database** item. This is a
 separate writable application database, not the Rayfin-managed identity database.
@@ -134,7 +222,7 @@ checks used the actual Fabric SQL engine and compiled service/SqlStore, includin
 a forced real unique-key collision and concurrent duplicate answer submissions.
 This is not a new authenticated browser or deployed-Function HTTP smoke test.
 
-## 3. Deploy the Entra-only baseline
+### 3. Publish the Entra-only baseline manually
 
 Keep the committed defaults in `rayfin/rayfin.yml`:
 
@@ -211,12 +299,14 @@ that blocks popups cannot establish that session.
 
 Run all applicable [release gates](#release-gates) for the Entra-only baseline.
 
-## 4. Bootstrap a publisher/admin explicitly
+### 4. Bootstrap a publisher/admin explicitly
 
 There is no "first user becomes admin" rule. Admin/publisher authority comes
 only from `quizcrowd.Administrators`, provisioned by a trusted SQL administrator.
 Any signed-in creator may manage their own quizzes, not global config.
-Deploying the app does not automatically grant this application-admin role.
+Raw `rayfin up` does not grant this application-admin role. The wrapper only
+bootstraps it when explicitly passed `--bootstrap-admin-self` and no other
+administrator exists.
 Publisher controls at `/admin/` is shown only to an authenticated caller whose verified app
 subject is in that table; configuration commands repeat this check on the server.
 
@@ -520,6 +610,51 @@ Use browser developer tools or a small SDK caller to bypass the UI deliberately.
 Keep a record of actual tenant, region, SDK/CLI versions, policy output and
 observed results in your private release process. Do not publish tokens or
 attendee data as test evidence.
+
+## November 11, 2026 publication and install validation
+
+The existing approved test workspace/App/private SQL database were reused.
+`npm run deploy -- --workspace-id ... --item-name ... --database-id ...`
+completed actual runtime-settings/DAB application, idempotent SQL initialization,
+encrypted coordinate configuration and **full** static/Functions publication.
+Functions metadata read back `Complete`. All five original game documents,
+administrator identities, guest settings and audit rows were unchanged through
+deployment. No capacity, database, external host, SQL grant or tenant policy was
+created or changed.
+
+The fresh published-runtime SDK suite passed **25 recorded scenario groups**
+with **95 HTTP 200 responses**, covering create/edit/revert/save/reload/
+duplicate/delete, expected-version host control, concurrent idempotent answer
+awards, Quiz correctness/scoring, late-join rejection, Survey answer types,
+owner-only written/results access, attendee suppression and completed reload.
+Five clearly test-owned items were removed; cleanup failures were zero and the
+original game-document/administrator hashes still matched afterwards.
+
+The normal authorized guest probe changed disabled/Epoch 4 to enabled/Epoch 5.
+A fresh unsigned invocation still returned **HTTP 403** with
+`Anonymous access is not allowed for function invocation.` The switch was
+restored to **disabled/Epoch 6**, preserving revocation semantics; the audit count
+advanced from five to seven. This is negative live gateway evidence, not a
+successful anonymous attendee test.
+
+Local validation includes **188 tests in 12 files**, strict typechecks and
+production build. Two additional isolated real-Edge groups cover the first-use
+browser theme preference, six system/saved-value combinations, manual override
+across system change/reload and unavailable storage. The exhaustive join-code
+test still checks all 100,000 suffixes. When shared-machine resource contention
+causes the parallel runner to time out, run the same complete suite with
+`npm test -- --maxWorkers=1`; do not skip assertions or relax typechecks.
+
+New-database REST creation/LRO/pagination/error behavior is covered by isolated
+HTTP contract tests. A paid clean install/new SQL resource was **not** created
+for this validation. Initial admin insertion into a genuinely empty new database
+was not live-tested. Existing-resource bootstrap/publication was.
+
+Authenticated embedded portal interaction remains limited by the shared browser's
+cross-origin frame tooling. The SDK tests are real Fabric/SQL checks, **not**
+interactive authenticated browser E2E. The previous 120-scenario UI matrix below
+is a local fixture baseline; only the additional focused theme groups were
+rerun for this narrow frontend change.
 
 ## November 10, 2026 validation
 

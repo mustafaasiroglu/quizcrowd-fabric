@@ -6,10 +6,11 @@ publisher-controlled anonymous attendance, and application data persisted in
 
 > **Preview implementation template, not a production-certified deployment.**
 > Local typechecks, game/authorization tests and the real Fabric Functions
-> bundler are exercised. The latest validation passed 179 local tests,
-> 120 real-browser scenarios with isolated fixtures, and 25 recorded live
+> bundler are exercised. The latest validation passed 188 local tests,
+> focused real-browser theme checks in addition to the earlier 120-scenario
+> isolated-fixture UI baseline, and 25 recorded live
 > SDK check groups against an existing Fabric deployment. See the
-> [validation scope and limits](docs/deployment.md#november-10-2026-validation).
+> [validation scope and limits](docs/deployment.md#november-11-2026-publication-and-install-validation).
 > In particular, anonymous Function invocation with app-identity SQL access
 > must be confirmed in your tenant before enabling public attendance.
 > A live public-hosting experiment served the frontend anonymously, but
@@ -22,7 +23,7 @@ publisher-controlled anonymous attendance, and application data persisted in
 | --- | --- |
 | Creator | Compact clickable session cards, branded two-column editor, shared/per-question answer durations, immutable content type, server-enforced read-only view, fresh private duplicate, confirmed owner-only delete |
 | Host | Lobby, QR invite, six-digit numeric game code, start/next controls, timed questions, reveal and leaderboard |
-| Attendee | Entra sign-in by default; optional anonymous guest for public quizzes only; per-tab secret attendee credential |
+| Attendee | Entra sign-in; per-tab secret attendee credential; guest protocol implemented but current unsigned Fabric gateway remains blocked |
 | Game | Server-calculated scores (1,000 + up to 500 speed points), streaks, late-join policy, three answer-reveal policies |
 | Survey | Single/multiple selections, Other and free text; host-only top-three charts and written feedback; no scoring or AI generation |
 | Publisher | Explicit administrator bootstrap, audited database guest-access switch, revocation of existing guest sessions |
@@ -56,13 +57,43 @@ Function/SQL boundary. Read the [architecture](docs/architecture.md).
    Review [licensing status](LICENSING.md) before redistribution.
 2. Clone your new repository and install **Node.js 24 LTS**.
 3. Run `npm ci --ignore-scripts --no-audit`, then `npm run check`.
-4. Follow [Deployment and administration](docs/deployment.md) to choose your
-   capacity/workspace, create the application SQL database, bootstrap an admin,
-   configure the Function, and deploy with the real Rayfin CLI.
 
-This is **not one-click deployment**. Tenant approval, Fabric item permissions,
-SQL database creation and grants are explicit publisher decisions. No workflow
-deploys cloud resources or incurs Fabric capacity charges automatically.
+### Deploy in three steps
+
+1. **Create an App in a Fabric workspace** already assigned to your selected,
+   approved capacity. Note its exact name and workspace ID.
+2. **Deploy from VS Code/the project terminal.** Sign Azure CLI and Rayfin in as
+   the same trusted publisher, then run:
+
+   ```powershell
+   az login
+   npx rayfin login
+   npm run deploy -- --workspace-id "<workspace-GUID>" --item-name "<App name>" --create-database --bootstrap-admin-self
+   ```
+
+   The deploy command runs the pinned Rayfin CLI, automatically creates a
+   separate private **Fabric SQL Database**, initializes its schema, verifies
+   your app identity before explicit admin bootstrap, configures encrypted
+   server-side SQL coordinates, and performs a full `rayfin up` publication.
+   `--create-database` explicitly approves SQL capacity/storage consumption;
+   there is no separate manual database-creation step.
+3. **Test the App inside Fabric.** Open the same App item in its workspace.
+   Complete the [release gates](docs/deployment.md#release-gates) before sharing.
+
+See [deployment details and existing-app upgrades](docs/deployment.md#three-step-install).
+An existing app must initially use `--database-id "<existing-private-SQL-ID>"`
+instead of `--create-database`; reruns reuse the ignored local binding. Existing
+data, settings and administrator identities are preserved. No new capacity,
+tenant policy or SQL access grants are created. The deployment identity must
+already be authorized as the app owner/database administrator.
+
+**Anonymous attendance is not yet a verified deployable feature.** The current
+Fabric Functions gateway rejects unsigned invocation even when the database
+guest switch is enabled. Automatic SQL setup and publication do not remove that
+platform gate; do not enable public attendance until the anonymous release gate
+is satisfied. The [bounded native SQL investigation](docs/anonymous-attendance.md)
+explains the remaining response-authorization requirement and approval-dependent
+alternative.
 
 ## Local commands
 
@@ -91,8 +122,9 @@ difference between local and deployed external connections.
 | `npm audit --audit-level=high` | Full online dependency audit; also enforced in CI |
 | `npm run dev:frontend` | Loopback-only Vite frontend |
 | `npm run dev` | Rayfin frontend + local Function development (requires configured environment) |
+| `npm run deploy -- --workspace-id "<GUID>" --item-name "<App>" --create-database --bootstrap-admin-self` | Automatic private SQL installation and full existing-App publication |
 | `npx rayfin functions init --path rayfin/functions` | Regenerate Function types; preserves existing implementation |
-| `npx rayfin up --workspace "<workspace-name>"` | Explicit deployment; creates/updates Fabric services |
+| `npx rayfin up --workspace "<workspace-name>"` | Advanced: publish Fabric services only; does not initialize the separate private application SQL database |
 
 ## Project layout
 
@@ -103,6 +135,7 @@ packages/data/           CallerIdentity entity only, protected with claims.sub
 rayfin/functions/        Authorization, game rules, SQL persistence and Function
 database/001-schema.sql  Standalone Fabric SQL application tables, guest access off
 database/002-six-digit-codes.sql  Non-destructive numeric-code migration with legacy aliases
+scripts/deploy.mjs       Explicit workspace/App deployment and private SQL bootstrap
 docs/                   Deployment, admin operations, architecture and limitations
 tests/                  Local regression and authorization tests
 ```
@@ -147,7 +180,8 @@ question JSON and answer encoding, without a database migration.
 Six-digit codes preserve leading zeros; existing UUID
 invitations and old codes remain compatible through server-side resolution.
 The original QR lobby, colorful answers, leaderboard and podium remain.
-**Light is the default**; **Dark** is also available, saved across
+The first visit follows the browser's light/dark preference; manual **Light**
+and **Dark** choices take priority and are saved across
 navigation and reloads. Entra, SQL-backed persistence, trusted publisher controls
 and the Internal/Public authorization boundary remain.
 See [UI behavior and screenshot review](docs/ui.md) for intentional

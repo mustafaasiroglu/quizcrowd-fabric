@@ -441,7 +441,7 @@ describe('pre-render two-theme bootstrap', () => {
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
     expect(css).not.toContain('prefers-color-scheme');
   });
-  async function bootstrap(saved: string | null, unavailable = false) {
+  async function bootstrap(saved: string | null, unavailable = false, dark?: boolean | 'blocked') {
     const html = await readFile(new URL('../packages/frontend/index.html', import.meta.url), 'utf8');
     const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
     if (!script) throw new Error('Theme bootstrap script missing.');
@@ -450,19 +450,33 @@ describe('pre-render two-theme bootstrap', () => {
     runInNewContext(script, {
       document: { documentElement: { dataset, setAttribute(name: string, value: string) { attributes[name] = value; } } },
       localStorage: { getItem() { if (unavailable) throw new Error('Blocked storage'); return saved; } },
+      ...(dark === undefined ? {} : { matchMedia(query: string) {
+        expect(query).toBe('(prefers-color-scheme: dark)');
+        if (dark === 'blocked') throw new Error('Blocked media query');
+        return { matches: dark };
+      } }),
     });
     return { theme: attributes['data-theme'], dataset };
   }
-  it('defaults to light without consulting system or URL', async () => {
+  it('uses the initial system preference for missing or invalid saved choices', async () => {
     expect((await bootstrap(null)).theme).toBe('light');
-    expect((await bootstrap('system')).theme).toBe('light');
-    expect((await bootstrap('arbitrary')).theme).toBe('light');
+    for (const saved of [null, 'system', 'arbitrary']) {
+      expect((await bootstrap(saved, false, false)).theme).toBe('light');
+      expect((await bootstrap(saved, false, true)).theme).toBe('dark');
+    }
   });
   it('restores exactly the explicit dark/light preference before React loads', async () => {
     expect((await bootstrap('light')).theme).toBe('light');
     expect((await bootstrap('dark')).theme).toBe('dark');
+    expect((await bootstrap('light', false, true)).theme).toBe('light');
+    expect((await bootstrap('dark', false, false)).theme).toBe('dark');
+    expect((await bootstrap('dark', false, 'blocked')).dataset).toEqual({});
   });
-  it('flags unavailable storage while still rendering light', async () => {
+  it('flags unavailable storage while using the system preference when available', async () => {
     expect(await bootstrap(null, true)).toEqual({ theme: 'light', dataset: { themeStorage: 'unavailable' } });
+    expect(await bootstrap(null, true, true)).toEqual({ theme: 'dark', dataset: { themeStorage: 'unavailable' } });
+  });
+  it('falls back to light if the media API is blocked', async () => {
+    expect(await bootstrap(null, false, 'blocked')).toEqual({ theme: 'light', dataset: { themeMedia: 'unavailable' } });
   });
 });

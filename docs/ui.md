@@ -413,14 +413,17 @@ change the six-digit invitation or credential/authorization semantics.
 
 ## Exactly two themes
 
-The first visit always starts **light**, independently of operating-system
-appearance. The toolbar offers only moon/sun **Dark** and **Light** icon buttons,
+The first visit follows the browser's **prefers-color-scheme** preference,
+falling back to light when the media API is unavailable. The toolbar offers only moon/sun **Dark** and **Light** icon buttons,
 with accessible labels, titles and `aria-pressed`; no continuously visible text.
-There is no system/auto mode or URL theme override.
+There is no persistent system/auto mode or URL theme override. Operating-system
+changes do not override a manual choice during the page session.
 
 The selected value is saved under `quizcrowd-theme` in browser local storage.
 An inline, allowlisted bootstrap restores it before React paints, so page
-transitions and reloads retain the preference. Invalid values become light.
+transitions and reloads retain the preference. Valid saved choices always win;
+missing or invalid values use the initial browser preference without saving it
+as a manual choice.
 If browser storage is blocked, the choice still works for the open page and a
 visible status explains that it cannot survive reload. Theme storage contains
 only the preference, never quiz content, answer keys or identity credentials.

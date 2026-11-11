@@ -327,6 +327,28 @@ try {
   await cdp.call('Network.enable', {}, session);
   await cdp.call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }, { name: 'prefers-color-scheme', value: 'dark' }] }, session);
 
+  await check('initial theme follows browser preference; saved manual choices win without later system changes', async () => {
+    for (const [saved, system, expected] of [[null,'dark','dark'],[null,'light','light'],['invalid','dark','dark'],['invalid','light','light'],['light','dark','light'],['dark','light','dark']]) {
+      await cdp.call('Emulation.setEmulatedMedia', { features: [{name:'prefers-reduced-motion',value:'reduce'},{name:'prefers-color-scheme',value:system}] }, session);
+      const {identifier}=await cdp.call('Page.addScriptToEvaluateOnNewDocument',{source:`
+        if(location.origin==="http://127.0.0.1:5174") {
+          ${saved===null?'localStorage.removeItem("quizcrowd-theme");':`localStorage.setItem("quizcrowd-theme",${JSON.stringify(saved)});`}
+        }`},session);
+      try { await navigate('?fixture=signed-out'); }
+      finally { await cdp.call('Page.removeScriptToEvaluateOnNewDocument',{identifier},session); }
+      assert.equal(await evaluate('document.documentElement.dataset.theme'),expected);
+      assert.equal(await evaluate(`document.querySelector('[aria-label="${expected==='dark'?'Dark':'Light'}"]').getAttribute('aria-pressed')`),'true');
+      assert.equal(await evaluate('localStorage.getItem("quizcrowd-theme")'),saved);
+    }
+    await click('Light');
+    await cdp.call('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'},{name:'prefers-color-scheme',value:'dark'}]},session);
+    assert.equal(await evaluate('document.documentElement.dataset.theme'),'light');
+    await cdp.call('Page.reload',{},session);
+    await until('!!document.querySelector(".theme-switch")');
+    assert.equal(await evaluate('document.documentElement.dataset.theme'),'light');
+    assert.equal(await evaluate('localStorage.getItem("quizcrowd-theme")'),'light');
+  });
+
   await check('polished showcase: realistic quiz and survey host and mobile attendee', async () => {
     async function capture(name) {
       await inspectScreen(name);
@@ -405,7 +427,6 @@ try {
     await cdp.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false }, session);
     for (const theme of ['dark', 'light']) {
       await navigate('?fixture=admin');
-      if (size === 'desktop' && theme === 'dark') await check('light is default even with a dark system preference', async () => assert.equal(await evaluate('document.documentElement.dataset.theme'), 'light'));
       await check(`${theme}-${size}: three home actions focus the destination first field once`, async () => {
         for(const [action,field,next] of [['New Live Quiz','#quiz-title','#question-0'],['New Live Survey','#quiz-title','#question-0'],['Join with Code','#session-code','#session-code']]){
           await navigate();await click(theme==='dark'?'Dark':'Light');await click(action);
@@ -1662,12 +1683,13 @@ try {
     assert.equal(await evaluate('getComputedStyle(document.querySelector(".workspace-shapes span")).animationName'), 'none');
   });
   await check('unavailable browser preference storage is reported, not silently persisted', async () => {
+    await cdp.call('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'},{name:'prefers-color-scheme',value:'dark'}]},session);
     await cdp.call('Page.addScriptToEvaluateOnNewDocument', { source: `Object.defineProperty(window,'localStorage',{configurable:true,get(){throw new DOMException('Storage blocked','SecurityError')}});` }, session);
     await navigate('?fixture=signed-out');
     await until('!!document.querySelector(".theme-notice")');
-    assert.equal(await evaluate('document.documentElement.dataset.theme'), 'light');
-    await click('Dark');
     assert.equal(await evaluate('document.documentElement.dataset.theme'), 'dark');
+    await click('Light');
+    assert.equal(await evaluate('document.documentElement.dataset.theme'), 'light');
     assert.ok(await evaluate('document.querySelector(".theme-notice").textContent.includes("reset on reload")'));
   });
   await check('no runtime exception and no cloud or third-party network access in UI test', async () => {

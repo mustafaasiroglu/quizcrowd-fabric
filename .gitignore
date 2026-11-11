@@ -25,6 +25,9 @@ packages/functions/local.settings.json
 rayfin/.env
 rayfin/.env.secrets
 rayfin/.deployments.json
+rayfin/.quizcrowd-bindings.json
+rayfin/.quizcrowd-bindings.json.tmp
+rayfin/.quizcrowd-deploy.lock
 packages/functions/deploymentdata.json
 rayfin/functions/local.settings.json
 rayfin/functions/deploymentdata.json
