@@ -17,6 +17,9 @@ const TICKET_KEY = 'quizcrowd-attendee-credential';
 
 export default function App() {
   const [connection, setConnection] = useState<Connection>();
+  const [initializing, setInitializing] = useState(true);
+  const [connectionError, setConnectionError] = useState('');
+  const [connectionAttempt, setConnectionAttempt] = useState(0);
   const [session, setSession] = useState<OpaqueSession | null>(null);
   const [settings, setSettings] = useState<SettingsView>();
   const [error, setError] = useState('');
@@ -73,13 +76,19 @@ export default function App() {
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
+    let connected: Connection | undefined;
     let active = true;
-    connect().then((c) => {
+    const timeout = setTimeout(() => {
       if (!active) return;
-      setConnection(c);
+      active = false;
+      setConnectionError('Fabric connection timed out. Retry the connection.');
+      setInitializing(false);
+    }, 30000);
+    connect().then((c) => {
+      if (!active) { c.client.auth.destroy(); return; }
+      connected = c;
       const initialSession = c.client.auth.getSession();
       let principal = sessionKey(initialSession);
-      setSession(initialSession);
       const saved = sessionStorage.getItem(TICKET_KEY);
       if (saved) {
         const parsed: unknown = JSON.parse(saved);
@@ -101,9 +110,26 @@ export default function App() {
         setBusy(false); setLibraryState('loading'); setAuthorReady(false);
         setGame(undefined); setTicket(undefined); setQuizzes([]); setSettings(undefined); setDraft(blankDraft()); setAuthor(undefined);
       });
-    }).catch((e: unknown) => setError(message(e)));
-    return () => { active = false; unsubscribe?.(); };
-  }, []);
+      setConnection(c); setSession(initialSession); setInitializing(false);
+    }).catch((e: unknown) => {
+      if (active) {
+        unsubscribe?.(); unsubscribe = undefined;
+        connected?.client.auth.destroy(); connected = undefined;
+        setConnectionError(message(e)); setInitializing(false);
+      }
+    }).finally(() => clearTimeout(timeout));
+    return () => { active = false; clearTimeout(timeout); unsubscribe?.(); connected?.client.auth.destroy(); };
+  }, [connectionAttempt]);
+
+  useEffect(() => {
+    if (!initializing) {
+      if (document.activeElement === document.body) content.current?.focus({ preventScroll: true });
+      return;
+    }
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previous; };
+  }, [initializing]);
 
   async function refresh(c = connection) {
     if (!c) return;
@@ -247,6 +273,7 @@ export default function App() {
   const signInGate = requiresSignIn && !signedIn;
 
   return <>
+    <div className="app-shell" inert={initializing} aria-busy={initializing}>
     {page !== 'author' && <div className={`shapes-wrapper ${page === 'home' ? 'workspace-shapes' : ''}`} aria-hidden="true">{Array.from({ length: 12 }, (_, i) => <span key={i} />)}</div>}
     <a className="skip-link" href="#content">Skip to content</a>
     <header className="app-toolbar">
@@ -257,17 +284,20 @@ export default function App() {
       </nav>
     </header>
     <main id="content" ref={content} tabIndex={-1} className={`app-content screen-container page-${page}`}>
+      {!initializing && <>
+      {connectionError && <div role="alert" className="error"><p>{connectionError}</p><button className="subtle" onClick={() => {
+        setConnectionError(''); setInitializing(true); setConnection(undefined); setConnectionAttempt(value => value + 1);
+      }}>Retry connection</button></div>}
       {error && <div role="alert" className="error">{error}</div>}
-      {!connection && !error && <p role="status" className="connection-status muted">Connecting to Fabric...</p>}
       {page === 'home' && <div className="home-screen forms-home">
         <h1 className="sr-only">QuizCrowd live quizzes and surveys</h1>
         <div className="home-actions">
           <button className="home-action quiz-action" aria-label="New Live Quiz" aria-describedby="new-quiz-description" disabled={!connection || busy} onClick={() => create('quiz')}><Icon name="quiz" /><span><strong>New Live Quiz</strong><span id="new-quiz-description" className="action-description">Multiple choice quiz with real-time leaderboard.</span></span></button>
           <button className="home-action survey-action" aria-label="New Live Survey" aria-describedby="new-survey-description" disabled={!connection || busy} onClick={() => create('survey')}><Icon name="survey" /><span><strong>New Live Survey</strong><span id="new-survey-description" className="action-description">Collect live feedback without scoring.</span></span></button>
-          <button className="home-action join-code-button" aria-label="Join with Code" aria-describedby="join-description" disabled={busy} onClick={() => navigate({ page: 'join', invitation: '' }, false, '#session-code')}><Icon name="join" /><span><strong>Join with Code</strong><span id="join-description" className="action-description">Enter a quiz or survey.</span></span></button>
+          <button className="home-action join-code-button" aria-label="Join with Code" aria-describedby="join-description" disabled={!connection || busy} onClick={() => navigate({ page: 'join', invitation: '' }, false, '#session-code')}><Icon name="join" /><span><strong>Join with Code</strong><span id="join-description" className="action-description">Enter a quiz or survey with invitation code.</span></span></button>
         </div>
-        {signedIn ? recent
-          : <section className="card home-signin"><h2>Recent Items</h2><p className="muted">Your recent quiz and surveys.</p><p className="muted">Sign in with Microsoft Entra to create and manage your sessions. Attendees can join using a six-digit game code.</p></section>}
+        {connection && (signedIn ? recent
+          : <section className="card home-signin"><h2>Recent Items</h2><p className="muted">Your recent quiz and surveys.</p><p className="muted">Sign in with Microsoft Entra to create and manage your sessions. Attendees can join using a six-digit game code.</p></section>)}
       </div>}
       {page === 'join' && <div className="centered-page">
         <section className="card join-card">
@@ -287,7 +317,7 @@ export default function App() {
           </form>}
         </section>
       </div>}
-      {signInGate && <div className="centered-page"><section className="card sign-in-card"><h1>Sign in required</h1><p className="muted">Sign in with your work account to open this page.</p><button className="primary" disabled={!connection || busy} onClick={signIn}>Sign in with Microsoft Entra</button></section></div>}
+      {signInGate && connection && <div className="centered-page"><section className="card sign-in-card"><h1>Sign in required</h1><p className="muted">Sign in with your work account to open this page.</p><button className="primary" disabled={busy} onClick={signIn}>Sign in with Microsoft Entra</button></section></div>}
       {page === 'admin' && signedIn && !settings && !error && <p role="status">Checking administrator access...</p>}
       {page === 'admin' && signedIn && settings && !settings.isAdmin && <section className="card"><h1>Access denied</h1><p role="alert">Publisher controls require a bootstrapped administrator.</p></section>}
       {page === 'admin' && signedIn && settings?.isAdmin && <div className="publisher-page page-container">
@@ -325,8 +355,11 @@ export default function App() {
       })} onAnswer={(option) => void run(current => submitAnswer({ option }, current))}
         onSurveyAnswer={(response) => void run(current => submitAnswer({ response }, current))} />)}
       {page === 'not-found' && <section className="card"><h1>Page not found</h1><p>The link is invalid or this page does not exist.</p><button className="primary" onClick={home}>Back to Home</button></section>}
+      </>}
     </main>
     <AppFooter />
+    </div>
+    {initializing && <div className="startup-overlay" role="status"><div className="loading-spinner" aria-hidden="true" /><span className="sr-only">Loading QuizCrowd...</span></div>}
   </>;
 }
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }

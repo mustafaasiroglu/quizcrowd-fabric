@@ -149,6 +149,8 @@ examples**, not live Fabric test evidence. Names, scores and feedback are
 fictional. Survey results and written feedback appear only to the session owner;
 attendees see their own response acknowledgement and a completion message.
 
+![Home with colored quiz, survey and invitation actions and fictional recent sessions](docs/images/home-desktop.png)
+
 | Desktop host | Mobile attendee |
 | --- | --- |
 | ![Quiz host presenting an Innovation Week question](docs/images/quiz-desktop-host.png) | ![Mobile Quiz attendee answering the same question](docs/images/quiz-mobile-attendee.png) |

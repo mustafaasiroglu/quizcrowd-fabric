@@ -24,7 +24,8 @@ export async function connect() {
     fabricPortalUrl: resolved.runtimeConfig.portalUrl ?? '',
     returnOrigin: window.location.origin,
   };
-  await initEmbeddedAuth(client.auth, options);
+  try { await initEmbeddedAuth(client.auth, options); }
+  catch (error) { client.auth.destroy(); throw error; }
   return {
     client,
     signIn: () => ensureSignedInWithFabric(client.auth, options),

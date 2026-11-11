@@ -4,7 +4,7 @@ import { copyTitle } from '@rayfin-app/shared';
 const parameters = new URLSearchParams(location.search);
 const previous = JSON.parse(sessionStorage.getItem('quizcrowd-test-fixture') ?? 'null');
 const requestedExample = parameters.get('example');
-const example = ['survey-multiple', 'survey-single', 'survey-other-only', 'survey-legacy-single-other', 'quiz-ten', 'survey-ten', 'survey-results', 'response-locked', 'showcase-quiz', 'showcase-survey'].includes(requestedExample) ? requestedExample : previous?.example;
+const example = ['survey-multiple', 'survey-single', 'survey-other-only', 'survey-legacy-single-other', 'quiz-ten', 'survey-ten', 'survey-results', 'response-locked', 'showcase-home', 'showcase-quiz', 'showcase-survey'].includes(requestedExample) ? requestedExample : previous?.example;
 const stored = requestedExample && example !== previous?.example ? null : previous;
 let authenticated = stored?.authenticated ?? parameters.get('fixture') !== 'signed-out';
 const admin = stored?.admin ?? parameters.get('fixture') !== 'creator';
@@ -36,7 +36,7 @@ let myResponse;
 let surveyAnswers = {};
 let version = 1;
 const players = ['Alex', 'Sam', 'Taylor', 'Jordan'];
-if (!stored && example?.startsWith('showcase-')) {
+if (!stored && ['showcase-quiz', 'showcase-survey'].includes(example)) {
   const survey = example === 'showcase-survey';
   currentCode = '600123';
   currentDraft = { ...draft, title: survey ? 'Team Pulse: Building Better Together' : 'Innovation Week: The Big Team Quiz',
@@ -71,7 +71,7 @@ if (!stored && example?.startsWith('showcase-')) {
       options: Array.from({ length: 10 }, (_, i) => `Topic ${i + 1}${i === 9 ? ' - literal | and \\ characters. ' + 'Long topic text '.repeat(12) : ''}`),
       correctIndex: survey ? null : 9, duration: 120, ...(survey ? { survey: { other: true, allowMultiple: true } } : {}) }] };
   phase = location.pathname.startsWith('/host/lobby/') ? 'lobby' : 'question';
-} else if (!stored && example) {
+} else if (!stored && example?.startsWith('survey-')) {
   currentDraft = { ...draft, title: example === 'survey-multiple' ? 'Live Survey demo - multiple and Other' : 'Live Survey demo - written feedback',
     mode: 'survey', lateJoin: true, questions: [{ text: 'What should we include in our next event?',
       options: example === 'survey-other-only' ? [] : ['Product sessions', 'Workshops'],
@@ -112,6 +112,23 @@ function nextDemoCode() {
   throw new Error('Demo join-code space exhausted.');
 }
 function session() { return { isAuthenticated: authenticated, isAnonymous: !authenticated, user: authenticated ? { id: 'test-only-verified-subject' } : undefined }; }
+if (!stored && example === 'showcase-home') {
+  for (const [index, title] of ['Friday Team Quiz', 'Team Pulse: Working Better', 'Fabric Fundamentals'].entries()) {
+    const record = snapshot();
+    record.currentDraft.title = title;
+    record.currentCode = `${index + 6}0012${index + 3}`;
+    record.createdAt -= index * 86400000;
+    if (index === 1) {
+      record.currentDraft.mode = 'survey';
+      record.currentDraft.questions = [
+        { text: 'What would help us do our best work?', options: ['More focus time', 'Clearer priorities', 'Shared learning'], correctIndex: null, duration: 15, survey: { other: true, allowMultiple: true } },
+        { text: 'What should we keep doing?', options: [], correctIndex: null, duration: 15, survey: { other: true, allowMultiple: false } },
+      ];
+    }
+    records.set(`${String(index + 1).repeat(8)}-2222-4333-8444-555555555555`, record);
+  }
+  activate(gameId, records.get(gameId));
+}
 function resultResponses(index) {
   if (example === 'showcase-survey') {
     const feedback = [
@@ -186,6 +203,7 @@ window.__quizcrowdFixture = {
   revealMode(value) { currentDraft.showAnswer = value; },
 };
 if (parameters.get('library') === 'loading') window.__quizcrowdFixture.defer('list');
+if (parameters.get('startup') === 'loading') window.__quizcrowdFixture.defer('connect');
 function summary(id = activeId, record = snapshot()) {
   const { currentDraft: draft, phase, myOption, myResponse } = record;
   return { id, code: record.currentCode, title: draft.title, phase, visibility: draft.visibility,
@@ -196,6 +214,7 @@ const connection = {
   client: { auth: {
     getSession: session,
     onSessionChange(callback) { listeners.add(callback); return () => listeners.delete(callback); },
+    destroy() {},
     async signOut() { authenticated = false; persist(); for (const listener of listeners) listener(session()); },
   } },
   signIn() {
@@ -205,7 +224,11 @@ const connection = {
     return Promise.resolve(session());
   },
 };
-export async function connect() { return connection; }
+export async function connect() {
+  const pending = deferred.get('connect');
+  if (pending) { const error = await pending; if (error) throw new Error(error); }
+  return connection;
+}
 export async function call(_connection, request, token = '', asGuest = false) {
   requests.push(structuredClone({ ...request, hasToken: !!token, asGuest }));
   const pending = deferred.get(request.command);

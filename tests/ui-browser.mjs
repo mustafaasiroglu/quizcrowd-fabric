@@ -349,6 +349,91 @@ try {
     assert.equal(await evaluate('localStorage.getItem("quizcrowd-theme")'),'light');
   });
 
+  await check('startup overlay: pending, ready, failure, retry and signed-out states', async () => {
+    await navigate('?fixture=admin');
+    for (const theme of ['light', 'dark']) for (const width of [1440, 390]) {
+      await cdp.call('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false }, session);
+      await evaluate(`localStorage.setItem('quizcrowd-theme',${JSON.stringify(theme)})`);
+      await navigate('?startup=loading&fixture=signed-out');
+      assert.equal(await evaluate('document.querySelector(".app-shell").inert'), true);
+      assert.equal(await evaluate('document.querySelector(".app-shell").getAttribute("aria-busy")'), 'true');
+      assert.equal(await evaluate('document.querySelector("main").textContent'), '');
+      assert.equal(await evaluate('document.body.innerText.includes("Recent Items") || document.body.innerText.includes("Connecting to Fabric")'), false);
+      assert.equal(await evaluate('document.body.style.overflow'), 'hidden');
+      assert.equal(await evaluate('document.querySelector(".startup-overlay").textContent'), 'Loading QuizCrowd...');
+      assert.equal(await evaluate('getComputedStyle(document.querySelector(".loading-spinner")).animationName'), 'none');
+      assert.equal(await evaluate('(() => {const r=document.querySelector(".startup-overlay").getBoundingClientRect();return r.left===0&&r.top===0&&r.width===innerWidth&&r.height===innerHeight})()'), true);
+      await evaluate('document.querySelector(".toolbar-actions button").focus()');
+      assert.equal(await evaluate('document.activeElement.closest(".app-shell")===null'), true);
+      await pointerClick(`document.querySelector('.toolbar-actions button[aria-label="${theme === 'light' ? 'Dark' : 'Light'}"]')`);
+      assert.equal(await evaluate('document.documentElement.dataset.theme'), theme, 'overlay prevents pointer interaction');
+      await cdp.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 }, session);
+      await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 }, session);
+      assert.equal(await evaluate('document.activeElement.closest(".app-shell")===null'), true, 'inert shell prevents keyboard entry');
+      if (width === 1440) {
+        await cdp.call('Emulation.setEmulatedMedia', { features: [{name:'prefers-reduced-motion',value:'no-preference'}] }, session);
+        assert.equal(await evaluate('getComputedStyle(document.querySelector(".loading-spinner")).animationName'), 'spin');
+        await cdp.call('Emulation.setEmulatedMedia', { features: [{name:'prefers-reduced-motion',value:'reduce'}] }, session);
+      }
+      await screenshot(`${theme}-${width}-startup-overlay`);
+      await evaluate('window.__quizcrowdFixture.release()');
+      await until('document.querySelector(".startup-overlay")===null && !!document.querySelector(".home-signin")');
+      assert.equal(await evaluate('document.querySelector(".app-shell").inert'), false);
+      assert.equal(await evaluate('document.querySelector(".app-shell").getAttribute("aria-busy")'), 'false');
+      assert.equal(await evaluate('document.body.style.overflow'), '');
+      assert.equal(await evaluate('document.querySelector(".home-signin h2").textContent'), 'Recent Items');
+    }
+    await navigate('?startup=loading');
+    await evaluate('window.__quizcrowdFixture.release("Fabric unavailable")');
+    await until('!!document.querySelector("[role=alert]")');
+    assert.equal(await evaluate('document.querySelector(".startup-overlay")===null && !document.querySelector(".app-shell").inert'), true);
+    assert.equal(await evaluate('document.querySelector(".home-signin")===null && document.querySelector(".recent-sessions")===null'), true);
+    assert.ok((await evaluate('document.querySelector("[role=alert]").textContent')).includes('Fabric unavailable'));
+    await evaluate('window.__quizcrowdFixture.defer("connect")');
+    await click('Retry connection');
+    assert.equal(await evaluate('!!document.querySelector(".startup-overlay") && document.querySelector("[role=alert]")===null'), true);
+    await evaluate('window.__quizcrowdFixture.release()');
+    await until('!!document.querySelector(".session-card")');
+    assert.equal(await evaluate('document.querySelector(".startup-overlay")===null'), true);
+    await evaluate('window.__quizcrowdFixture.defer("list")');
+    await click('Join with Code');
+    await pointerClick('document.querySelector(\'[aria-label="Go back"]\')');
+    await until('!!document.querySelector(".library-loading")');
+    assert.equal(await evaluate('document.querySelector(".startup-overlay")===null && !document.querySelector(".app-shell").inert'), true);
+    await evaluate('window.__quizcrowdFixture.release()');
+    await until('!!document.querySelector(".session-card")');
+  });
+  await check('startup overlay: timeout recovers and ignores late connection completion', async () => {
+    const {identifier} = await cdp.call('Page.addScriptToEvaluateOnNewDocument', {source: `
+      const originalTimeout=window.setTimeout.bind(window);
+      window.setTimeout=(callback,delay,...args)=>originalTimeout(callback,delay===30000?100:delay,...args);
+    `}, session);
+    try { await navigate('?startup=loading'); }
+    finally { await cdp.call('Page.removeScriptToEvaluateOnNewDocument', {identifier}, session); }
+    await until('!!document.querySelector("[role=alert]")');
+    assert.ok((await evaluate('document.querySelector("[role=alert]").textContent')).includes('Fabric connection timed out'));
+    await evaluate('window.__quizcrowdFixture.release()');
+    await pause(100);
+    assert.equal(await evaluate('document.querySelector(".recent-sessions")===null'), true, 'late completion cannot publish a timed-out connection');
+    await click('Retry connection');
+    await until('!!document.querySelector(".session-card")');
+    assert.equal(await evaluate('document.querySelector("[role=alert]")===null'), true);
+  });
+  await check('polished showcase: home with colored actions and realistic recent items', async () => {
+    await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false }, session);
+    await navigate('?example=showcase-home');
+    await click('Light');
+    await until('document.querySelectorAll(".session-card").length===3');
+    assert.deepEqual(await evaluate('[...document.querySelectorAll(".session-title")].map(e=>e.textContent)'), ['Friday Team Quiz','Team Pulse: Working Better','Fabric Fundamentals']);
+    assert.deepEqual(await evaluate('[...document.querySelectorAll(".session-type")].map(e=>e.textContent)'), ['Live Quiz','Live Survey','Live Quiz']);
+    assert.equal(await evaluate('[...document.querySelectorAll(".session-card .badge")].every(e=>e.textContent==="Not started")'), true);
+    await inspectScreen('home-desktop');
+    await screenshot('home-desktop');
+    if (process.env.QUIZCROWD_UPDATE_SHOWCASE === '1') {
+      await mkdir(join('docs', 'images'), { recursive: true });
+      await copyFile(join(directory, 'home-desktop.png'), join('docs', 'images', 'home-desktop.png'));
+    }
+  });
   await check('polished showcase: realistic quiz and survey host and mobile attendee', async () => {
     async function capture(name) {
       await inspectScreen(name);
@@ -1094,7 +1179,7 @@ try {
       await check(`${label}: home layout, theme and accessibility`, async () => {
         assert.equal(await evaluate('document.documentElement.dataset.theme'), theme);
         assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions button")].map(e=>e.getAttribute("aria-label"))'), ['New Live Quiz','New Live Survey','Join with Code']);
-        assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions .action-description")].map(e=>e.textContent)'), ['Multiple choice quiz with real-time leaderboard.','Collect live feedback without scoring.','Enter a quiz or survey.']);
+        assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-actions .action-description")].map(e=>e.textContent)'), ['Multiple choice quiz with real-time leaderboard.','Collect live feedback without scoring.','Enter a quiz or survey with invitation code.']);
         const actions = await evaluate(`(() => {
           const parent=document.querySelector(".home-actions");
           return {width:parent.clientWidth,buttons:[...parent.children].map(e=>{
@@ -1129,7 +1214,8 @@ try {
         assert.equal(await evaluate('document.querySelector(".session-date time").dateTime'), '2026-11-09T09:00:00.000Z');
         assert.equal(await evaluate('document.querySelectorAll(".home-actions button > svg").length'), 3);
         const neutrals=await evaluate('[...document.querySelectorAll(".home-action")].map(e=>({background:getComputedStyle(e).backgroundColor,gradient:getComputedStyle(e).backgroundImage,border:getComputedStyle(e).borderColor,description:getComputedStyle(e.querySelector(".action-description")).color,title:getComputedStyle(e.querySelector("strong")).color,icon:getComputedStyle(e.querySelector("svg")).color}))');
-        assert.equal(new Set(neutrals.map(e=>e.border)).size,1);
+        assert.equal(new Set(neutrals.map(e=>e.border)).size,3);
+        for (const entry of neutrals) assert.equal(entry.border,entry.icon);
         assert.equal(new Set(neutrals.map(e=>e.description)).size,1);
         for(const entry of neutrals){assert.notEqual(entry.icon,entry.title);assert.notEqual(entry.description,entry.title);assert.equal(entry.title,await evaluate('getComputedStyle(document.body).color'));assert.equal(entry.background,theme==='light'?'rgb(255, 255, 255)':'rgb(34, 34, 60)');assert.ok(entry.gradient.startsWith('linear-gradient(135deg, rgba(0, 0, 0, 0) 60%'));assert.ok(entry.gradient.includes(theme==='light'?'0.05':'0.08'));}
         const cornerContrast=await evaluate(`(() => {

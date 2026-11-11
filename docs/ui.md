@@ -235,7 +235,9 @@ both themes, including hover/focus/active/disabled states. The editor's generic
 outline-button hover rule explicitly excludes filled primary/secondary buttons;
 it previously overrode their white foreground with dark text in Light mode.
 Home uses separate `home-action` buttons with white Light surfaces and neutral
-Dark surfaces, neutral borders/titles/descriptions, and color only on icons.
+Dark surfaces and neutral titles/descriptions. Colored borders match each
+action's purple, pink or indigo icon; these accents are scoped to the three home
+actions, not other application buttons.
 A subtle transparent brand tint reaches the lower-right corner (5% Light,
 8% Dark); most of each surface stays neutral. Equal compact 280px geometry
 and 1.01 hover scale are retained. The Survey description is
@@ -408,8 +410,24 @@ remain authoritative. The previous integer-second width plus short CSS
 transition caused the visible once-per-second jumps.
 
 The join page is **Join with Code**, its input is **Session Code**, and the
-home action description is **Enter a quiz or survey.** These labels do not
+home action description is **Enter a quiz or survey with invitation code.** These labels do not
 change the six-digit invitation or credential/authorization semantics.
+
+## Initial Fabric connection
+
+Initial connection and embedded authentication use a translucent, app-viewport
+overlay with a centered spinner and screen-reader status, without visible
+connection copy. The covered shell is inert and marked busy; scrolling is
+temporarily blocked. Recent Items and route content are withheld until this
+boundary resolves, so no premature signed-out explanation or empty library
+flashes. A connection failure or 30-second timeout removes the overlay and
+provides an actionable **Retry connection** error. Abandoned late completions
+cannot replace a newer connection. Reduced-motion preferences leave a visible
+static spinner.
+
+After initialization, ordinary Recent Items refreshes remain nonblocking and
+show only their existing in-card skeletons, with visible genuine errors. They
+do not reactivate the startup overlay or move keyboard focus.
 
 ## Exactly two themes
 
@@ -522,7 +540,8 @@ malformed requests, legacy answers, idempotency and unchanged Quiz scoring.
 ### Polished showcase
 
 The README gallery contains real rendered application screens with fictional,
-test-only Quiz/Survey content. It does not claim live Fabric authorization.
+test-only Quiz/Survey content, including the updated home actions and three
+example recent sessions. It does not claim live Fabric authorization.
 To regenerate only those curated repository images in an isolated local Edge:
 
 ```powershell
