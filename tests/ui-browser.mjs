@@ -274,6 +274,7 @@ async function navigate(query = '') {
     if (location.origin === "http://127.0.0.1:5174") {
       sessionStorage.removeItem("quizcrowd-attendee-credential");
       sessionStorage.removeItem("quizcrowd-test-fixture");
+      sessionStorage.setItem("quizcrowd-test-navigation", ${JSON.stringify(nonce)});
       window.__quizcrowdNavigation = ${JSON.stringify(nonce)};
     }` }, session);
   try {
@@ -418,6 +419,46 @@ try {
     await click('Retry connection');
     await until('!!document.querySelector(".session-card")');
     assert.equal(await evaluate('document.querySelector("[role=alert]")===null'), true);
+  });
+  await check('optional invitation PIN: owner setting, QR fragment, manual entry and Entra context', async () => {
+    await cdp.call('Emulation.setDeviceMetricsOverride', {width:1440,height:1000,deviceScaleFactor:1,mobile:false},session);
+    await navigate('?fixture=admin');
+    await click('Dark');
+    await pointerClick('document.querySelector(".session-open")');
+    await until('!!document.querySelector("#pin-required")');
+    assert.equal(await evaluate('document.querySelector("#pin-required").checked'),false);
+    await pointerClick('document.querySelector("#pin-required")');
+    await submitAuthor();
+    await until('!!document.querySelector(".host-lobby .invitation-pin")');
+    assert.equal(await evaluate('document.querySelector(".invitation-pin strong").textContent'),'0007');
+    assert.equal(await evaluate('new URL(document.querySelector(".join-link a").href).hash'),'#pin=0007');
+    assert.equal(await evaluate('new URL(document.querySelector(".join-link a").href).searchParams.has("pin")'),false);
+    await inspectScreen('pin-dark-desktop-host'); await screenshot('pin-dark-desktop-host');
+    await pointerClick('document.querySelector(".join-link a")');
+    await until('!!document.querySelector("#nickname")');
+    assert.equal(await evaluate('document.querySelector("#invitation-pin")===null'),true,'QR supplies PIN without retyping');
+    await input('#nickname','Morgan'); await click('Join Game');
+    await until('!!document.querySelector(".attendee-lobby")');
+    assert.equal(await evaluate('window.__quizcrowdFixture.requests.findLast(r=>r.command==="join").pin'),'0007');
+    assert.equal(await evaluate('document.querySelector(".invitation-pin")===null'),true,'attendee snapshot does not contain owner PIN');
+    await cdp.call('Emulation.setDeviceMetricsOverride', {width:390,height:844,deviceScaleFactor:1,mobile:false},session);
+    await navigate('?gate=pin');
+    await click('Light');
+    await click('Join with Code'); await input('#session-code','000123'); await click('Next');
+    await until('!!document.querySelector("#invitation-pin")');
+    await input('#nickname','Morgan');
+    assert.equal(await evaluate('[...document.querySelectorAll("button")].find(e=>e.textContent==="Join Game").disabled'),true);
+    await input('#invitation-pin','9999'); await click('Join Game');
+    await until('!!document.querySelector("[role=alert]")');
+    await input('#invitation-pin','0007'); await inspectScreen('pin-light-mobile-retry'); await screenshot('pin-light-mobile-retry');
+    await click('Join Game'); await until('!!document.querySelector(".attendee-lobby")');
+    await navigate('join/?code=000123&gate=pin&fixture=signed-out&guests=on');
+    await until('!!document.querySelector("#invitation-pin")');
+    await input('#invitation-pin','0007'); await input('#nickname','Morgan');
+    await click('Sign in to attend');
+    await until('[...document.querySelectorAll("button")].some(e=>e.textContent==="Join Game"&&!e.disabled)');
+    assert.equal(await evaluate('document.querySelector("#invitation-pin").value'),'0007','manual PIN survives normal Entra session transition');
+    await click('Join Game'); await until('!!document.querySelector(".attendee-lobby")');
   });
   await check('polished showcase: home with colored actions and realistic recent items', async () => {
     await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false }, session);
@@ -1122,7 +1163,7 @@ try {
         assert.ok(layout.submitBottom<layout.contentTop,'single header action appears above form');
         assert.ok(layout.inline <= 1); assert.equal(layout.inputWidth, 48);
         assert.equal(await evaluate(`(() => {const input=document.querySelector('#shared-duration'),control=input.closest('.duration'),clock=control.querySelector('svg'),unit=control.lastElementChild,r=control.getBoundingClientRect();return clock!==null&&unit.textContent==='s'&&unit.getBoundingClientRect().right<r.right&&getComputedStyle(control).borderTopWidth==='1px';})()`),true);
-        assert.equal(layout.groups.length, 4);
+        assert.equal(layout.groups.length, 5);
         for (const group of layout.groups.slice(1)) {
           assert.equal(group.border, '1px'); assert.match(group.color, /rgba\(/); assert.ok(group.padding <= 16);
         }
@@ -1479,7 +1520,7 @@ try {
     await navigate(); await click('New Live Survey');
     assert.equal(await evaluate('document.querySelectorAll(\'[aria-label*="correct option"]\').length'), 0);
     assert.equal(await evaluate('document.querySelector(".answer-reveal-settings")===null'), true);
-    assert.equal(await evaluate('document.querySelectorAll(".settings-group").length'), 3);
+    assert.equal(await evaluate('document.querySelectorAll(".settings-group").length'), 4);
     await input('#quiz-title', 'Team Survey'); await input('#question-0', 'How was the session?');
     for (const [i, option] of ['Great', 'Good', 'Okay', 'Needs work'].entries()) await input(`#option-0-${i}`, option);
     await submitAuthor(); await until('!!document.querySelector(".host-lobby")');

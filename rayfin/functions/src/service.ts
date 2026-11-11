@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { copyTitle, getAnswerDuration, MAX_OPTIONS, MAX_SURVEY_TEXT_LENGTH } from '@rayfin-app/shared';
 import type { Store } from './sql-store.js';
 import {
-  answer, control, createGame, Denied, Conflict, draftSchema, join, own, preview,
+  answer, control, createGame, Denied, InvitationDenied, Conflict, draftSchema, join, own, preview, setInvitationPin,
   settingsView, signed, view, visibilityAllowed, authorDraft, guestAllowed, readOnly, summary, surveyWrittenPage,
 } from './domain.js';
 
@@ -10,6 +10,7 @@ const requestSchema = z.object({
   command: z.enum(['settings', 'configure', 'list', 'create', 'edit', 'duplicate', 'resolve', 'visibility', 'delete', 'preview', 'join', 'state', 'host', 'answer', 'control', 'written']),
   id: z.string().regex(/^(?:[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}|[0-9A-F]{10}|[0-9]{6})$/i).optional(),
   nickname: z.string().optional(),
+  pin: z.string().regex(/^\d{4}$/).optional(),
   enabled: z.boolean().optional(),
   visibility: z.enum(['internal', 'public']).optional(),
   publicAcknowledged: z.boolean().optional(),
@@ -26,7 +27,7 @@ export async function execute(
   store: Store, raw: unknown, subject: string | null, token: string, now = Date.now(),
 ): Promise<unknown> {
   const input = requestSchema.parse(raw);
-  return store.transact(async (tx) => {
+  const result = await store.transact(async (tx) => {
     // Every command, including an old guest token, rechecks this row in the same
     // transaction as the game operation. No TTL cache can outlive revocation.
     const settings = await tx.settings();
@@ -54,7 +55,7 @@ export async function execute(
     switch (input.command) {
       case 'resolve':
         if (!subject) guestAllowed(game, settings);
-        return { code: game.code };
+        return { code: game.code, pinRequired: !!game.invitationPin };
       case 'duplicate': {
         own(game, subject);
         const draft = { ...authorDraft(game), title: copyTitle(game.title), visibility: 'internal' as const, publicAcknowledged: false };
@@ -80,12 +81,13 @@ export async function execute(
       }
       case 'edit': {
         own(game, subject);
-        if (!input.draft) return { ...summary(game), draft: authorDraft(game) };
+        if (!input.draft) return { ...summary(game), draft: authorDraft(game), ...(game.invitationPin ? { invitationPin: game.invitationPin.value } : {}) };
         if (readOnly(game)) throw new Conflict('Started sessions and sessions with responses are read-only. Duplicate this session to edit a new copy.');
         if (input.draft.mode !== game.mode) throw new Conflict('Content type cannot be changed. Create a new quiz or survey instead.');
         const draft = draftSchema.parse({ ...input.draft,
           answerDuration: input.draft.answerDuration ?? game.answerDuration ?? getAnswerDuration(input.draft) });
         visibilityAllowed(draft, settings);
+        setInvitationPin(game, draft.pinRequired, now);
         Object.assign(game, draft);
         game.version++;
         result = { id: game.id };
@@ -95,7 +97,15 @@ export async function execute(
         own(game, subject);
         await tx.remove(game.id);
         return { deleted: true };
-      case 'join': result = join(game, input.nickname, subject, settings, now); break;
+      case 'join':
+        try { result = join(game, input.nickname, subject, settings, now, input.pin); }
+        catch (error) {
+          if (!(error instanceof InvitationDenied)) throw error;
+          // Commit bounded failure accounting under the same Settings/game locks.
+          await tx.save(game);
+          return error;
+        }
+        break;
       case 'state': result = view(game, token, subject, settings, now); break;
       case 'host': result = view(game, '', subject, settings, now, true); break;
       case 'written':
@@ -116,4 +126,6 @@ export async function execute(
     await tx.save(game);
     return result;
   });
+  if (result instanceof InvitationDenied) throw result;
+  return result;
 }

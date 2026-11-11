@@ -2,7 +2,9 @@
 import { copyTitle } from '@rayfin-app/shared';
 
 const parameters = new URLSearchParams(location.search);
-const previous = JSON.parse(sessionStorage.getItem('quizcrowd-test-fixture') ?? 'null');
+const navigation = sessionStorage.getItem('quizcrowd-test-navigation');
+const cached = JSON.parse(sessionStorage.getItem('quizcrowd-test-fixture') ?? 'null');
+const previous = (cached?.navigation ?? null) === navigation ? cached : null;
 const requestedExample = parameters.get('example');
 const example = ['survey-multiple', 'survey-single', 'survey-other-only', 'survey-legacy-single-other', 'quiz-ten', 'survey-ten', 'survey-results', 'response-locked', 'showcase-home', 'showcase-quiz', 'showcase-survey'].includes(requestedExample) ? requestedExample : previous?.example;
 const stored = requestedExample && example !== previous?.example ? null : previous;
@@ -78,6 +80,7 @@ if (!stored && ['showcase-quiz', 'showcase-survey'].includes(example)) {
       correctIndex: null, duration: 120, survey: { other: true, allowMultiple: example === 'survey-multiple' } }] };
   phase = 'question';
 }
+if (!stored && parameters.get('gate') === 'pin') currentDraft.pinRequired = true;
 if (stored) {
   currentDraft = stored.currentDraft; deleted = stored.deleted; currentCode = stored.currentCode;
   phase = stored.phase; questionIndex = stored.questionIndex; myOption = stored.myOption; myResponse = stored.myResponse; version = stored.version;
@@ -97,7 +100,7 @@ function activate(id, record) {
 }
 function persist() {
   records.set(activeId, snapshot());
-  sessionStorage.setItem('quizcrowd-test-fixture', JSON.stringify({ example, authenticated, admin, owner, settings, ...snapshot(), activeId, records: [...records] }));
+  sessionStorage.setItem('quizcrowd-test-fixture', JSON.stringify({ navigation, example, authenticated, admin, owner, settings, ...snapshot(), activeId, records: [...records] }));
 }
 function nextDemoCode() {
   const used = new Set([currentCode, ...[...records.values()].map(record => record.currentCode)]);
@@ -168,6 +171,7 @@ function view(attendee) {
     streak: i === 0 ? 3 : 1, rank: i + 1 }));
   return {
     id: activeId, code: currentCode, title: currentDraft.title, mode: currentDraft.mode,
+    ...(!attendee && currentDraft.pinRequired ? { invitationPin: '0007' } : {}),
     phase, version, questionIndex, totalQuestions: currentDraft.questions.length, serverNow: Date.now(),
     players, answerCount: !attendee && example?.startsWith('showcase-') && phase === 'question' ? 3 : myOption === undefined && myResponse === undefined ? 0 : 1,
     ...(phase === 'question' || phase === 'reveal' ? { question: { text: q.text, options: q.options, duration: q.duration, survey: q.survey }, questionStartedAt } : {}),
@@ -251,8 +255,8 @@ export async function call(_connection, request, token = '', asGuest = false) {
         if (summary().readOnly) throw new Error('Session is read-only.');
         currentDraft = structuredClone(request.draft); return { id: activeId };
       }
-      return { ...summary(), draft: structuredClone(currentDraft) };
-    case 'resolve': return { code: currentCode };
+      return { ...summary(), draft: structuredClone(currentDraft), ...(currentDraft.pinRequired ? { invitationPin: '0007' } : {}) };
+    case 'resolve': return { code: currentCode, pinRequired: !!currentDraft.pinRequired };
     case 'duplicate': {
       records.set(activeId, snapshot());
       const code = nextDemoCode(); // Predictable test-only suffix; production uses Node crypto.randomInt.
@@ -284,6 +288,7 @@ export async function call(_connection, request, token = '', asGuest = false) {
       if (!authenticated && !asGuest) throw new Error('Sign in to join.');
       if (asGuest && !settings.anonymousEnabled) throw new Error('Guests are disabled.');
       if (phase === 'finished' || (phase !== 'lobby' && !currentDraft.lateJoin)) throw new Error('This game is not accepting new attendees.');
+      if (currentDraft.pinRequired && request.pin !== '0007') throw new Error('Invitation could not be verified. Check the code/PIN or try again later.');
       if (request.nickname && !players.includes(request.nickname)) players.push(request.nickname);
       return { id: activeId, token: 'test-only-attendee-credential' };
     case 'control':

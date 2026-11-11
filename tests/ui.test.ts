@@ -262,7 +262,10 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(editable).not.toContain('<select');
     expect(editable).toContain('class="shared-duration-choice"');
     expect(editable).toContain('Duration in seconds for all questions');
-    expect(editable.match(/class="settings-group"/g)).toHaveLength(4);
+    expect(editable.match(/class="settings-group"/g)).toHaveLength(5);
+    expect(editable).toContain('Require a 4-digit invitation PIN');
+    expect(editable).toMatch(/<input(?=[^>]*id="pin-required")(?=[^>]*type="checkbox")[^>]*>/);
+    expect(ui.renderEditor({pinRequired:true})).toMatch(/<input(?=[^>]*id="pin-required")(?=[^>]*checked="")[^>]*>/);
     for (const [name, value] of [['late-join', 'allow'], ['answer-reveal', 'never']]) {
       expect(editable).toMatch(new RegExp(`<input(?=[^>]*name="${name}")(?=[^>]*value="${value}")(?=[^>]*checked="")[^>]*>`));
     }
@@ -290,7 +293,7 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(survey).not.toContain('Show correct answers?');
     expect(survey).not.toContain('Disabled for surveys');
     expect(survey).not.toContain('Select the circle beside the correct answer.');
-    expect(survey.match(/class="settings-group"/g)).toHaveLength(3);
+    expect(survey.match(/class="settings-group"/g)).toHaveLength(4);
   });
   it('keeps equal-valued custom mode selected and visible in read-only views', () => {
     const locked = ui.renderEditor({ answerDuration: { mode: 'custom', seconds: 35 },

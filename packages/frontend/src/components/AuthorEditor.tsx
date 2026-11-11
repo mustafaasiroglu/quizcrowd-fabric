@@ -10,7 +10,7 @@ import { QuestionDurationPicker } from './QuestionDurationPicker';
 export const blankQuestion = (duration = DEFAULT_ANSWER_DURATION): Question => ({ text: '', options: ['', '', '', ''], correctIndex: null, duration });
 export const blankDraft = (mode: Draft['mode'] = 'quiz'): Draft => ({
   title: '', mode, visibility: 'internal', publicAcknowledged: false,
-  lateJoin: false, showAnswer: 'wait_all', questions: [blankQuestion()], answerDuration: { mode: 'same', seconds: DEFAULT_ANSWER_DURATION },
+  lateJoin: false, pinRequired: false, showAnswer: 'wait_all', questions: [blankQuestion()], answerDuration: { mode: 'same', seconds: DEFAULT_ANSWER_DURATION },
 });
 export function sameDraftContent(left: Draft, right: Draft): boolean {
   const content = (draft: Draft) => {
@@ -18,6 +18,7 @@ export function sameDraftContent(left: Draft, right: Draft): boolean {
     return JSON.stringify({
       title: draft.title.trim(), mode: draft.mode, visibility: draft.visibility,
       publicAcknowledged: draft.publicAcknowledged, lateJoin: draft.lateJoin, showAnswer: draft.showAnswer,
+      pinRequired: !!draft.pinRequired,
       answerDuration: { mode: timing.mode, seconds: timing.seconds },
       questions: draft.questions.map(question => ({
         text: question.text.trim(), options: question.options.map(option => option.trim()),
@@ -35,9 +36,9 @@ export function removeOption(question: Question, index: number): Question {
     ...(question.survey && !options.length ? { survey: { ...question.survey, allowMultiple: false } } : {}),
     correctIndex: correct === null || correct === index ? null : correct > index ? correct - 1 : correct };
 }
-export function AuthorEditor({ draft, onChange, editing, dirty = false, anonymousEnabled, busy, readOnly = false, onSave, onBack, onHost, onJoin, onResults, joinUnavailableReason, onRevokePublic }: {
+export function AuthorEditor({ draft, onChange, editing, dirty = false, anonymousEnabled, busy, readOnly = false, invitationPin, onSave, onBack, onHost, onJoin, onResults, joinUnavailableReason, onRevokePublic }: {
   draft: Draft; onChange(draft: Draft): void; editing: boolean; anonymousEnabled: boolean;
-  busy: boolean; readOnly?: boolean; dirty?: boolean; onSave(): void; onBack(): void; onHost?(): void; onJoin?(): void; onResults?(): void; joinUnavailableReason?: string; onRevokePublic?(): void;
+  busy: boolean; readOnly?: boolean; dirty?: boolean; invitationPin?: string; onSave(): void; onBack(): void; onHost?(): void; onJoin?(): void; onResults?(): void; joinUnavailableReason?: string; onRevokePublic?(): void;
 }) {
   const [removing, setRemoving] = useState<number>();
   const questionsRef = useRef<HTMLDivElement>(null);
@@ -132,6 +133,10 @@ export function AuthorEditor({ draft, onChange, editing, dirty = false, anonymou
             <label className="check"><input type="radio" name="audience" value="public" checked={draft.visibility === 'public'} disabled={!anonymousEnabled} onChange={() => onChange({ ...draft, visibility: 'public', publicAcknowledged: false })} /><span>{anonymousEnabled ? 'Anyone with link' : 'Anyone with link (disabled by admin)'}<span className="small muted audience-description">Anonymous response, no sign-in required.</span></span></label>
           </fieldset>
           {draft.visibility === 'public' && <div className="warning"><p>{PUBLIC_WARNING}</p><label className="check"><input type="checkbox" checked={draft.publicAcknowledged} onChange={(e) => onChange({ ...draft, publicAcknowledged: e.target.checked })} required />I understand and choose public access.</label></div>}</div>
+          <div className="settings-group"><label className="check"><input id="pin-required" type="checkbox" checked={!!draft.pinRequired} onChange={event => onChange({ ...draft, pinRequired: event.target.checked })} />Require a 4-digit invitation PIN</label>
+            <p className="small muted">Optional extra join gate, not a replacement for sign-in or audience restrictions. Invite links and QR codes include the PIN.</p>
+            {draft.pinRequired && <p className="small muted">{invitationPin ? <>Invitation PIN: <strong>{invitationPin}</strong></> : 'A PIN will be generated when you save.'}</p>}
+          </div>
           <div className="settings-group"><fieldset className="duration-settings"><legend>Answer duration</legend>
             <div className="shared-duration-choice"><label className="check"><input type="radio" name="answer-duration" value="same" checked={timing.mode === 'same'} onChange={() => setDuration('same')} />Same for all questions</label>
               {timing.mode === 'same' && <DurationInput id="shared-duration" label="Duration in seconds for all questions" value={timing.seconds} onChange={seconds => setDuration('same', seconds)} />}

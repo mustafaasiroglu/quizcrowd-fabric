@@ -162,7 +162,14 @@ The showcase uses explicit 60/90-second sample timings; **new drafts default to
 15 seconds**. See [UI testing and capture instructions](docs/ui.md#polished-showcase).
 
 Home offers **New Live Quiz**, **New Live Survey** and **Join with Code** above
-recent session cards. The editor places title/questions on the left and settings
+recent session cards. Creators can optionally require a **4-digit invitation
+PIN** (off by default). QR/invitation links carry it in a URL fragment; manual
+code entry asks for it. Server verification and SQL-persisted attempt limits
+apply to both paths. This extra join gate does not replace Entra, attendee
+capabilities or audience restrictions, and does not resolve the anonymous
+Function gateway limitation. See [invitation PIN behavior](docs/ui.md#optional-invitation-pin).
+
+The editor places title/questions on the left and settings
 on the right, stacked on mobile. Started sessions or sessions with any submitted
 answer open read-only, including through the server API. Compact cards omit
 thumbnails and show sentence-case status, an accessible date icon, question count

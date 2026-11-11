@@ -79,6 +79,7 @@ export interface Draft {
   visibility: Visibility;
   publicAcknowledged: boolean;
   lateJoin: boolean;
+  pinRequired?: boolean;
   showAnswer: 'wait_all' | 'after_response' | 'never';
   questions: Question[];
   answerDuration?: AnswerDuration;
@@ -120,6 +121,7 @@ export interface GameView {
   otherCount?: number;
   rankings?: { nickname: string; score: number; streak: number; rank: number }[];
   surveyResults?: SurveyQuestionResult[];
+  invitationPin?: string;
 }
 export interface SurveyQuestionResult {
   questionIndex: number;
@@ -152,7 +154,7 @@ export interface QuizSummary {
   responseCount: number;
   readOnly: boolean;
 }
-export interface AuthorView extends QuizSummary { draft: Draft }
+export interface AuthorView extends QuizSummary { draft: Draft; invitationPin?: string }
 export interface SettingsView {
   anonymousEnabled: boolean;
   guestEpoch: number;

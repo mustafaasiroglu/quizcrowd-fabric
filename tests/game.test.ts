@@ -194,6 +194,21 @@ function fixture(game = makePublic()) {
   return { store, game, saved: () => document };
 }
 describe('service boundary with mocked transactional store', () => {
+  it('uses the same PIN gate for Public guests without weakening audience or epoch revocation', async () => {
+    const f=fixture(makePublic({pinRequired:true}));
+    const pin=f.game.invitationPin!.value,id=f.game.id;
+    await expect(execute(f.store,{command:'join',id,nickname:'Guest'},null,'',1000)).rejects.toThrow('Invitation');
+    expect(f.saved().invitationPin!.failures).toBe(1);
+    const ticket=await execute(f.store,{command:'join',id,nickname:'Guest',pin},null,'',1100) as {token:string};
+    expect(await execute(f.store,{command:'state',id},null,ticket.token,1200)).not.toHaveProperty('invitationPin');
+    expect(await execute(f.store,{command:'preview',id},null,'',1200)).not.toHaveProperty('invitationPin');
+    await execute(f.store,{command:'configure',enabled:false},'trusted-admin','',1300);
+    await expect(execute(f.store,{command:'join',id,nickname:'Another',pin},null,'',1400)).rejects.toThrow('Anonymous');
+    await expect(execute(f.store,{command:'state',id},null,ticket.token,1400)).rejects.toThrow();
+    await execute(f.store,{command:'configure',enabled:true},'trusted-admin','',1500);
+    await expect(execute(f.store,{command:'state',id},null,ticket.token,1600)).rejects.toThrow('revoked');
+    expect(f.saved().invitationPin!.failures).toBe(1);
+  });
   it('requires bootstrap admin, not merely an authenticated user', async () => {
     const { store } = fixture();
     await expect(execute(store, { command: 'configure', enabled: false }, 'owner', '')).rejects.toThrow();

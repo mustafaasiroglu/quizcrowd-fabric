@@ -413,6 +413,46 @@ The join page is **Join with Code**, its input is **Session Code**, and the
 home action description is **Enter a quiz or survey with invitation code.** These labels do not
 change the six-digit invitation or credential/authorization semantics.
 
+## Optional invitation PIN
+
+The creator can enable **Require a 4-digit invitation PIN** for either a Quiz or
+Survey before it starts. New and legacy sessions default off. Saving generates
+a cryptographically random four-digit string on the server, preserving leading
+zeros. Ordinary saves preserve the same PIN; a duplicate inherits the enabled
+setting but generates an independent PIN and fresh attempt window. Started or
+answered sessions remain read-only.
+
+Only the owner's editor and host projection return the PIN. Lists, public
+lookup/preview and attendee snapshots never return it or its salt/digest.
+The host QR/link embeds `#pin=0007`, not a query parameter: fragments are not
+sent in HTTP requests or referrers. Scanning saves retyping only; join still
+verifies the PIN server-side. Manual Session Code entry resolves only a
+`pinRequired` flag and asks for four digits when applicable. Invitation context,
+including a manually entered PIN, survives the normal Entra sign-in transition.
+Treat shared links/QR captures as invitations; recipients can see their fragment.
+
+The private Fabric SQL game document retains the recoverable invitation value
+for owner display plus a random salt and SHA-256 digest for constant-time
+verification. These fields are never exposed as an aggregate. A four-digit PIN
+is a low-entropy convenience gate, not a credential-storage or authentication
+boundary: private database access already exposes the protected game data.
+It does not make Public questions private, replace Entra/capabilities or revoke
+already issued attendee credentials.
+
+Five failed attempts in a ten-minute **per-game** window block all further PIN
+joins/rejoins, even correct QR links, until the window expires. This global
+bound cannot be evaded by rotating browser state or caller-supplied identities.
+Failure accounting is persisted in the same SQL transaction under the existing
+Settings/game locks; the service commits the counter before returning denial.
+Hosts and existing valid attendee sessions keep working. Deliberately exhausting
+the bound can temporarily deny new joins; while editable, an owner can save the
+gate off and then save it on to generate a new PIN/window. Merely toggling an
+unsaved setting does not rotate a PIN.
+
+Authenticated service/QR/manual flows are implemented. The same gate is used by
+the guest domain path, but **live anonymous invocation remains blocked by the
+Fabric gateway** described in [anonymous attendance](anonymous-attendance.md).
+
 ## Initial Fabric connection
 
 Initial connection and embedded authentication use a translucent, app-viewport

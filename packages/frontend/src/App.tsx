@@ -30,6 +30,9 @@ export default function App() {
   const activeRouteKey = useRef(routeKey);
   const entryFocus = useRef<{ route: string; selector: string } | undefined>(undefined);
   const [code, setCode] = useState('');
+  const [pin, setPin] = useState('');
+  const [pinRequired, setPinRequired] = useState(false);
+  const [resolvedCode, setResolvedCode] = useState('');
   const [nickname, setNickname] = useState('');
   const [draft, setDraft] = useState<Draft>(blankDraft);
   const editing = route.page === 'author' && route.id ? route.id : undefined;
@@ -157,10 +160,22 @@ export default function App() {
     let active = true;
     const navigation = navigationVersion.current, identity = identityVersion.current;
     call<{ code: string }>(connection, { command: 'resolve', id: invitation })
-      .then((result) => { if (active && navigation === navigationVersion.current && identity === identityVersion.current) navigate({ page: 'join', invitation: result.code }, true); })
+      .then((result) => { if (active && navigation === navigationVersion.current && identity === identityVersion.current) navigate({ page: 'join', invitation: result.code, ...(route.page === 'join' && route.pin ? { pin: route.pin } : {}) }, true); })
       .catch((e: unknown) => { if (active && navigation === navigationVersion.current && identity === identityVersion.current) setError(message(e)); });
     return () => { active = false; };
-  }, [connection, page, invitation, session]);
+  }, [connection, page, invitation, session, routeKey]);
+  useEffect(() => {
+    setPin(route.page === 'join' ? route.pin ?? '' : '');
+  }, [routeKey]);
+  useEffect(() => {
+    setResolvedCode(''); setPinRequired(false);
+    if (!connection || page !== 'join' || !invitation || !/^\d{6}$/.test(code) || (!signedIn && !settings?.anonymousEnabled)) return;
+    let active = true;
+    call<{ code: string; pinRequired: boolean }>(connection, { command: 'resolve', id: code }, '', !signedIn)
+      .then(result => { if (active) { setPinRequired(result.pinRequired); setResolvedCode(code); } })
+      .catch((error: unknown) => { if (active) setError(message(error)); });
+    return () => { active = false; };
+  }, [connection, page, invitation, code, signedIn, session, settings?.anonymousEnabled]);
 
   async function run(action: (current: () => boolean) => Promise<void>) {
     const id = ++operation.current;
@@ -239,7 +254,7 @@ export default function App() {
   async function enter(guest: boolean, current: () => boolean) {
     if (!connection) return;
     const result = await call<{ id: string; token: string }>(connection,
-      { command: 'join', id: code.toUpperCase(), nickname }, '', guest);
+      { command: 'join', id: code.toUpperCase(), nickname, ...(pin ? { pin } : {}) }, '', guest);
     if (!current()) return;
     const next = { ...result, guest, nickname };
     sessionStorage.setItem(TICKET_KEY, JSON.stringify(next));
@@ -262,7 +277,7 @@ export default function App() {
     const next = await call<GameView>(connection, { command: 'state', id: game.id }, ticket.token, ticket.guest);
     if (current()) setGame(next);
   }
-  const joinUrl = game ? `${location.origin}${routeUrl({ page: 'join', invitation: game.code })}` : '';
+  const joinUrl = game ? `${location.origin}${routeUrl({ page: 'join', invitation: game.code, ...(game.invitationPin ? { pin: game.invitationPin } : {}) })}` : '';
   const joinUnavailableReason = author?.phase === 'finished' ? 'This session has finished.'
     : author && author.phase !== 'lobby' && !author.draft.lateJoin ? 'This session does not allow late joins.' : undefined;
   const back = <button className="icon-button" aria-label="Go back" onClick={home}><Icon name="back" /></button>;
@@ -308,10 +323,11 @@ export default function App() {
             <button type="submit" className="primary full-width" disabled={!/^\d{6}$/.test(code)}>Next</button>
           </form> : <form onSubmit={(e) => { e.preventDefault(); if (signedIn) void run((current) => enter(false, current)); }}>
             <p className="muted join-code">{!code ? 'Resolving invitation...' : <>Code: <strong>{code}</strong></>}</p>
+            {pinRequired && (route.page !== 'join' || !route.pin || !!error) && <><label htmlFor="invitation-pin">Invitation PIN</label><input id="invitation-pin" type="password" value={pin} onChange={event => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))} inputMode="numeric" pattern="[0-9]{4}" minLength={4} maxLength={4} autoComplete="off" required /></>}
             <label htmlFor="nickname">Your Nickname</label>
             <input id="nickname" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="Enter nickname..." maxLength={24} required />
-            {signedIn ? <button type="submit" className="primary full-width" disabled={busy || !nickname.trim() || !/^\d{6}$/.test(code)}>{busy ? 'Joining...' : 'Join Game'}</button> : <button type="button" className="primary full-width" disabled={busy || !connection} onClick={signIn}>Sign in to attend</button>}
-            {settings?.anonymousEnabled && <button type="button" className="secondary full-width guest-join" disabled={busy || !nickname.trim() || !/^\d{6}$/.test(code)} onClick={() => void run((current) => enter(true, current))}>Join as anonymous guest</button>}
+            {signedIn ? <button type="submit" className="primary full-width" disabled={busy || resolvedCode !== code || !nickname.trim() || !/^\d{6}$/.test(code) || (pinRequired && !/^\d{4}$/.test(pin))}>{busy ? 'Joining...' : 'Join Game'}</button> : <button type="button" className="primary full-width" disabled={busy || !connection} onClick={event => { event.preventDefault(); signIn(); }}>Sign in to attend</button>}
+            {settings?.anonymousEnabled && <button type="button" className="secondary full-width guest-join" disabled={busy || resolvedCode !== code || !nickname.trim() || !/^\d{6}$/.test(code) || (pinRequired && !/^\d{4}$/.test(pin))} onClick={() => void run((current) => enter(true, current))}>Join as anonymous guest</button>}
             <p className="muted small">Use a pseudonym. Nicknames and leaderboard scores are visible to other attendees. Your secret attendee credential stays in this tab.</p>
             {!settings?.anonymousEnabled && <p className="muted small">Anonymous attendance is disabled by the publisher.</p>}
           </form>}
@@ -330,9 +346,9 @@ export default function App() {
         </section>
       </div>}
       {page === 'author' && signedIn && !authorReady && <p role="status">{error ? 'Session unavailable.' : 'Loading editor...'}</p>}
-      {page === 'author' && signedIn && authorReady && <AuthorEditor key={routeKey} draft={draft} onChange={setDraft} editing={!!editing} dirty={!!author && !sameDraftContent(draft, author.draft)} readOnly={readOnly} anonymousEnabled={!!settings?.anonymousEnabled} busy={busy} onBack={home} onHost={editing ? () => host(editing) : undefined}
+      {page === 'author' && signedIn && authorReady && <AuthorEditor key={routeKey} draft={draft} invitationPin={author?.invitationPin} onChange={setDraft} editing={!!editing} dirty={!!author && !sameDraftContent(draft, author.draft)} readOnly={readOnly} anonymousEnabled={!!settings?.anonymousEnabled} busy={busy} onBack={home} onHost={editing ? () => host(editing) : undefined}
         onResults={author?.mode === 'survey' && author.phase === 'finished' ? () => { setTicket(undefined); navigate({ page: 'game', id: author.id, host: true, lobby: false }); } : undefined}
-        onJoin={readOnly && author && author.phase !== 'lobby' ? () => navigate({ page: 'join', invitation: author.code }) : undefined} joinUnavailableReason={joinUnavailableReason}
+        onJoin={readOnly && author && author.phase !== 'lobby' ? () => navigate({ page: 'join', invitation: author.code, ...(author.invitationPin ? { pin: author.invitationPin } : {}) }) : undefined} joinUnavailableReason={joinUnavailableReason}
         onRevokePublic={editing && draft.visibility === 'public' ? () => void run(async (current) => {
         await call(connection!, { command: 'visibility', id: editing, visibility: 'internal' });
         if (current()) {

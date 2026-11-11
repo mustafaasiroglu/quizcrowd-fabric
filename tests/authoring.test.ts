@@ -1,4 +1,5 @@
 import sql from 'mssql';
+import assert from 'node:assert/strict';
 import { describe, expect, it, vi } from 'vitest';
 import { execute } from '../rayfin/functions/src/service';
 import { authorDraft, createGame, createJoinCode, draftSchema } from '../rayfin/functions/src/domain';
@@ -32,6 +33,66 @@ function fixture(mode: 'quiz' | 'survey' = 'quiz') {
   return { store, legacy, games: () => games, game: () => games[0] };
 }
 describe('six-digit codes and owner authoring transactions (test store)', () => {
+  it.each(['quiz','survey'] as const)('persists optional %s PINs, preserves saves and gives duplicates independently generated gates', async mode => {
+    random.value = 7;
+    const f = fixture(mode), id = f.game().id;
+    expect(f.game().invitationPin).toBeUndefined();
+    await execute(f.store, {command:'edit',id,draft:{...authorDraft(f.game()),pinRequired:true}}, 'owner','',1000);
+    const gate = structuredClone(f.game().invitationPin!);
+    expect(gate.value).toBe('0008'); expect(gate.digest).toMatch(/^[a-f0-9]{64}$/); expect(gate.digest).not.toBe(gate.value);
+    await execute(f.store, {command:'edit',id,draft:authorDraft(f.game())},'owner','',1100);
+    expect(f.game().invitationPin).toEqual(gate);
+    const saved = await execute(f.store, {command:'edit',id},'owner','') as {invitationPin:string};
+    expect(saved.invitationPin).toBe('0008');
+    expect(saved).not.toHaveProperty('salt'); expect(saved).not.toHaveProperty('digest');
+    const copied = await execute(f.store,{command:'duplicate',id},'owner','',1200) as {id:string};
+    const copy = f.games().find(game=>game.id===copied.id)!;
+    expect(copy.pinRequired).toBe(true); expect(copy.invitationPin?.salt).not.toBe(gate.salt);
+    expect(copy.invitationPin?.digest).not.toBe(gate.digest); expect(copy.invitationPin?.value).toMatch(/^\d{4}$/);
+    for (const command of ['resolve','preview','list']) {
+      const projection = await execute(f.store,{command,id},'attendee','',1200);
+      if (command==='list') expect(projection).toEqual([]);
+      else expect(projection).not.toHaveProperty('invitationPin');
+      expect(JSON.stringify(projection)).not.toContain(gate.salt);
+      expect(JSON.stringify(projection)).not.toContain(gate.digest);
+    }
+    await expect(execute(f.store,{command:'edit',id},'attendee','')).rejects.toThrow();
+    await expect(execute(f.store,{command:'join',id,nickname:'Alice'},'alice','',1300)).rejects.toThrow('Invitation');
+    await expect(execute(f.store,{command:'join',id,nickname:'Alice',pin:'9999'},'alice','',1300)).rejects.toThrow('Invitation');
+    const ticket=await execute(f.store,{command:'join',id,nickname:'Alice',pin:gate.value},'alice','',1300) as {token:string};
+    const attendee=await execute(f.store,{command:'state',id},'alice',ticket.token,1300);
+    expect(attendee).not.toHaveProperty('invitationPin');
+    expect(await execute(f.store,{command:'host',id},'owner','',1300)).toHaveProperty('invitationPin',gate.value);
+    await execute(f.store,{command:'control',id,action:'start',version:f.game().version},'owner','',1400);
+    await expect(execute(f.store,{command:'edit',id,draft:{...authorDraft(f.game()),pinRequired:false}},'owner','')).rejects.toThrow('read-only');
+    await expect(execute(f.store,{command:'join',id,nickname:'Late',pin:gate.value},'late','',1500)).rejects.toThrow('not accepting');
+    await expect(execute(f.store,{command:'join',id,nickname:'Alice'},'alice','',1500)).rejects.toThrow('Invitation');
+    expect(await execute(f.store,{command:'state',id},'alice',ticket.token,1500)).not.toHaveProperty('invitationPin');
+  });
+  it('commits five wrong attempts across serialized concurrent requests, blocks even correct guesses, and expires the bounded window', async () => {
+    const f=fixture(),id=f.game().id;
+    await execute(f.store,{command:'edit',id,draft:{...authorDraft(f.game()),pinRequired:true}},'owner','',1000);
+    const pin=f.game().invitationPin!.value;
+    const wrong=pin==='9999'?'9998':'9999';
+    const requests=await Promise.allSettled(Array.from({length:12},(_,index)=>execute(f.store,{command:'join',id,nickname:`Guest${index}`,pin:wrong},`verified-${index}`,'',1100)));
+    expect(requests.every(result=>result.status==='rejected')).toBe(true);
+    expect(f.game().invitationPin!.failures).toBe(5); expect(f.game().participants).toHaveLength(0);
+    await expect(execute(f.store,{command:'join',id,nickname:'Alice',pin},'alice','',600999)).rejects.toThrow('Invitation');
+    await execute(f.store,{command:'join',id,nickname:'Alice',pin},'alice','',601000);
+    expect(f.game().participants).toHaveLength(1); expect(f.game().invitationPin!.failures).toBe(0);
+    await expect(execute(f.store,{command:'join',id,nickname:'Guest',pin},null,'',601001)).rejects.toThrow('Anonymous');
+    expect(f.game().invitationPin!.failures).toBe(0);
+  });
+  it('keeps legacy PIN-free joins, supports owner disable, and rejects caller-assigned PIN/attempt metadata', async () => {
+    const f=fixture(),id=f.game().id;
+    delete f.game().pinRequired;
+    await execute(f.store,{command:'join',id,nickname:'Legacy'},'legacy','',1000);
+    await execute(f.store,{command:'edit',id,draft:{...authorDraft(f.game()),pinRequired:true}},'owner','',1000);
+    for(const patch of [{pin:'0007'},{invitationPin:{value:'0007'}},{failures:0}]) await expect(execute(f.store,{command:'edit',id,draft:{...authorDraft(f.game()),...patch}},'owner','')).rejects.toThrow();
+    await execute(f.store,{command:'edit',id,draft:{...authorDraft(f.game()),pinRequired:false}},'owner','',1100);
+    expect(f.game().invitationPin).toBeUndefined();
+    await execute(f.store,{command:'join',id,nickname:'No pin'},'no-pin','',1200);
+  });
   it('authorizes written-response pages for the owner only, after survey results, without attendee aggregates', async () => {
     const f = fixture('survey'), id = f.game().id;
     await execute(f.store, { command: 'edit', id, draft: { ...draft, mode: 'survey', questions: [
@@ -58,9 +119,9 @@ describe('six-digit codes and owner authoring transactions (test store)', () => 
     for (let suffix = 0; suffix < 100000; suffix++) {
       random.value = suffix;
       const code = createJoinCode();
-      expect(code).toMatch(/^\d{6}$/);
-      expect(code.slice(1)).toBe(suffix.toString().padStart(5, '0'));
-      expect(Number(code[0])).toBe([...code.slice(1)].reduce((sum, digit) => sum + Number(digit), 0) % 10);
+      assert.match(code, /^\d{6}$/);
+      assert.equal(code.slice(1), suffix.toString().padStart(5, '0'));
+      assert.equal(Number(code[0]), [...code.slice(1)].reduce((sum, digit) => sum + Number(digit), 0) % 10);
     }
     expect(random.bound).toBe(100000);
     random.value = 7;
@@ -290,9 +351,9 @@ describe('six-digit codes and owner authoring transactions (test store)', () => 
     expect(f.game().code).toBe('700007');
     f.game().code = '000007'; // Existing non-checksummed numeric codes remain valid invitations.
     expect(f.game().id).not.toBe(f.game().code);
-    expect(await execute(f.store, { command: 'resolve', id: '000007' }, 'attendee', '')).toEqual({ code: '000007' });
-    expect(await execute(f.store, { command: 'resolve', id: f.legacy }, 'attendee', '')).toEqual({ code: '000007' });
-    expect(await execute(f.store, { command: 'resolve', id: f.game().id }, 'attendee', '')).toEqual({ code: '000007' });
+    expect(await execute(f.store, { command: 'resolve', id: '000007' }, 'attendee', '')).toEqual({ code: '000007', pinRequired: false });
+    expect(await execute(f.store, { command: 'resolve', id: f.legacy }, 'attendee', '')).toEqual({ code: '000007', pinRequired: false });
+    expect(await execute(f.store, { command: 'resolve', id: f.game().id }, 'attendee', '')).toEqual({ code: '000007', pinRequired: false });
     await expect(execute(f.store, { command: 'resolve', id: f.game().id }, null, '')).rejects.toThrow();
     for (const id of ['12345', '1234567', '12345X', '------------------------------------']) {
       await expect(execute(f.store, { command: 'join', id, nickname: 'A' }, 'attendee', '')).rejects.toThrow();

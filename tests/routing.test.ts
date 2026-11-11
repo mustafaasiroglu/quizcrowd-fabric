@@ -8,6 +8,7 @@ describe('static-host compatible screen URLs', () => {
   const routes: AppRoute[] = [
     { page: 'home' }, { page: 'admin' }, { page: 'join', invitation: '' },
     { page: 'join', invitation: '000123' }, { page: 'join', invitation: id },
+    { page: 'join', invitation: '000123', pin: '0007' },
     { page: 'author', mode: 'survey', id: '' }, { page: 'author', mode: 'quiz', id: '' },
     { page: 'author', mode: 'quiz', id },
     { page: 'game', id, host: true, lobby: true },
@@ -36,5 +37,12 @@ describe('static-host compatible screen URLs', () => {
   });
   it('ignores external return targets rather than redirecting to them', () => {
     expect(routeUrl(parse('/admin?returnTo=https://evil.example'))).toBe('/admin/');
+  });
+  it('keeps leading-zero invitation PINs in fragments, not HTTP query strings', () => {
+    const url = new URL(routeUrl({page:'join', invitation:'600123', pin:'0007'}), 'https://quiz.example');
+    expect(url.searchParams.has('pin')).toBe(false);
+    expect(url.hash).toBe('#pin=0007');
+    expect(parse('/?code=600123#pin=0007')).toEqual({page:'join', invitation:'600123', pin:'0007'});
+    for (const fragment of ['pin=7','pin=00000','pin=abcd','pin=0007&pin=0008']) expect(parse(`/join/?code=600123#${fragment}`).page).toBe('not-found');
   });
 });

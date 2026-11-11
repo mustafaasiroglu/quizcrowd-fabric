@@ -135,9 +135,12 @@ plan, region and workload. References:
 [anonymous HTTP triggers](https://learn.microsoft.com/en-us/azure/azure-functions/functions-bindings-http-webhook-trigger)
 and [managed identity with Fabric SQL](https://learn.microsoft.com/en-us/azure/service-connector/how-to-integrate-fabric-sql).
 
-An optional per-session invitation PIN should be **off by default and absent
-for legacy sessions** unless the publisher chooses otherwise. Embedding it in
-QR invites would remove retyping, not bypass server verification. Its
-low-entropy attempts need server-side abuse limits. It does not solve the
-Function gateway or replace a high-entropy attendee capability; it is not
-implemented as a workaround for either.
+An optional per-session invitation PIN is implemented for the normal
+authenticated join/QR path, **off by default and absent for legacy sessions**.
+The shared guest domain path also checks it, but that is not proof of working
+anonymous transport. QR fragments remove retyping, never server verification.
+SQL-persisted per-game failure limits commit before denial under the same
+Settings/game locks. Any future guest adapter must preserve that transaction
+contract, not roll back failed-attempt accounting. See the exact
+[PIN behavior and tradeoffs](ui.md#optional-invitation-pin). It does not solve
+the Function gateway or replace a high-entropy attendee capability.

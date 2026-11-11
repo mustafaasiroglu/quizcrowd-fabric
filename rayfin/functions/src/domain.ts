@@ -1,9 +1,10 @@
-import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import type { Draft, GameView, Phase, Question, QuizSummary, SettingsView, SurveyResponse } from '@rayfin-app/shared';
 import { decodeSurveyResponse, encodeSurveyResponse, getAnswerDuration, MAX_OPTIONS, MAX_TITLE_LENGTH, MAX_SURVEY_ANSWER_LENGTH, MAX_SURVEY_TEXT_LENGTH, SURVEY_TEXT_PAGE_SIZE } from '@rayfin-app/shared';
 
 export class Denied extends Error {}
+export class InvitationDenied extends Denied {}
 export class Conflict extends Error {}
 export const draftSchema = z.object({
   title: z.string().trim().min(1).max(MAX_TITLE_LENGTH),
@@ -11,6 +12,7 @@ export const draftSchema = z.object({
   visibility: z.enum(['internal', 'public']).default('internal'),
   publicAcknowledged: z.boolean().default(false),
   lateJoin: z.boolean().default(false),
+  pinRequired: z.boolean().default(false),
   showAnswer: z.enum(['wait_all', 'after_response', 'never']).default('wait_all'),
   answerDuration: z.object({ mode: z.enum(['same', 'custom']), seconds: z.number().int().min(5).max(120) }).strict().optional(),
   questions: z.array(z.object({
@@ -66,6 +68,7 @@ interface AnswerBase {
 }
 export type Answer = AnswerBase & ({ option: number; format?: undefined } | { option: string; format: 'survey-v1' });
 export interface Game extends Draft {
+  invitationPin?: { value: string; salt: string; digest: string; failures: number; windowStartedAt: number };
   id: string;
   code: string;
   owner: string;
@@ -105,11 +108,32 @@ export function createGame(input: unknown, subject: string | null, settings: Set
   const owner = signed(subject);
   const draft = draftSchema.parse(input);
   visibilityAllowed(draft, settings);
-  return {
+  const game: Game = {
     ...draft, answerDuration: getAnswerDuration(draft), id: randomUUID(), code: createJoinCode(),
     owner, createdAt: now, phase: 'lobby', version: 0, questionIndex: -1,
     questionStartedAt: 0, revealStartedAt: 0, participants: [], answers: [],
   };
+  setInvitationPin(game, draft.pinRequired, now);
+  return game;
+}
+export function setInvitationPin(game: Game, required: boolean, now: number): void {
+  if (!required) { delete game.invitationPin; return; }
+  if (game.invitationPin) return;
+  const value = randomInt(10000).toString().padStart(4, '0'), salt = randomBytes(32).toString('hex');
+  game.invitationPin = { value, salt, digest: hash(`${salt}:${value}`), failures: 0, windowStartedAt: now };
+}
+function checkInvitationPin(game: Game, pin: string | undefined, now: number): void {
+  const gate = game.invitationPin;
+  if (!gate) {
+    if (game.pinRequired) throw new Error('Invitation PIN configuration is missing.');
+    return;
+  }
+  if (now >= gate.windowStartedAt + 10 * 60 * 1000) { gate.failures = 0; gate.windowStartedAt = now; }
+  if (gate.failures >= 5) throw new InvitationDenied('Invitation could not be verified. Check the code/PIN or try again later.');
+  if (!pin || !/^\d{4}$/.test(pin) || !timingSafeEqual(Buffer.from(gate.digest, 'hex'), Buffer.from(hash(`${gate.salt}:${pin}`), 'hex'))) {
+    gate.failures++;
+    throw new InvitationDenied('Invitation could not be verified. Check the code/PIN or try again later.');
+  }
 }
 export const readOnly = (game: Game): boolean => game.phase !== 'lobby' || game.answers.length > 0;
 export function summary(game: Game): QuizSummary {
@@ -119,7 +143,7 @@ export function summary(game: Game): QuizSummary {
 }
 export function authorDraft(game: Game): Draft {
   const { title, mode, visibility, publicAcknowledged, lateJoin, showAnswer, questions } = game;
-  return { title, mode, visibility, publicAcknowledged, lateJoin, showAnswer, questions, answerDuration: getAnswerDuration(game) };
+  return { title, mode, visibility, publicAcknowledged, lateJoin, pinRequired: !!game.pinRequired, showAnswer, questions, answerDuration: getAnswerDuration(game) };
 }
 export function preview(game: Game, subject: string | null, settings: Settings) {
   if (!subject) guestAllowed(game, settings);
@@ -140,18 +164,21 @@ export function participant(
   }
   return p;
 }
-export function join(game: Game, nickname: unknown, subject: string | null, settings: Settings, now: number) {
+export function join(game: Game, nickname: unknown, subject: string | null, settings: Settings, now: number, pin?: string) {
   if (!subject) guestAllowed(game, settings);
   const returning = subject && game.participants.find((p) => p.subject === subject);
+  if (!returning) {
+    advance(game, now);
+    if (game.phase === 'finished' || (game.phase !== 'lobby' && !game.lateJoin)) {
+      throw new Conflict('This game is not accepting new attendees.');
+    }
+  }
+  checkInvitationPin(game, pin, now);
   if (returning) {
     const token = randomBytes(32).toString('base64url');
     returning.tokenHash = hash(token);
     returning.expiresAt = now + 12 * 60 * 60 * 1000;
     return { id: game.id, token };
-  }
-  advance(game, now);
-  if (game.phase === 'finished' || (game.phase !== 'lobby' && !game.lateJoin)) {
-    throw new Conflict('This game is not accepting new attendees.');
   }
   const name = z.string().trim().min(1).max(24).regex(/^[\p{L}\p{N} _.-]+$/u).parse(nickname);
   if (game.participants.length >= 500) throw new Conflict('The 500-attendee limit has been reached.');
@@ -277,6 +304,7 @@ export function view(
     totalQuestions: game.questions.length, serverNow: now,
     players: game.participants.map((p) => p.nickname), answerCount: game.mode === 'survey' && !host ? Number(!!mine) : answers.length,
   };
+  if (host && game.invitationPin) result.invitationPin = game.invitationPin.value;
   if (q) {
     result.question = publicQuestion(q);
     result.questionStartedAt = game.questionStartedAt;

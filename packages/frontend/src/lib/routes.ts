@@ -1,7 +1,7 @@
 export const screenPaths = ['admin', 'join', 'host/create', 'host/item', 'host/lobby', 'host/game', 'play'] as const;
 export type AppRoute =
   | { page: 'home' }
-  | { page: 'join'; invitation: string }
+  | { page: 'join'; invitation: string; pin?: string }
   | { page: 'admin' }
   | { page: 'author'; id: string; mode: 'quiz' | 'survey' }
   | { page: 'game'; id: string; host: boolean; lobby: boolean }
@@ -15,7 +15,7 @@ export function routeUrl(route: AppRoute): string {
     case 'home': return '/';
     case 'admin': return '/admin/';
     case 'join': return route.invitation
-      ? `/join/?${/^\d{6}$/.test(route.invitation) ? 'code' : 'gameId'}=${encodeURIComponent(route.invitation)}`
+      ? `/join/?${/^\d{6}$/.test(route.invitation) ? 'code' : 'gameId'}=${encodeURIComponent(route.invitation)}${route.pin ? `#pin=${encodeURIComponent(route.pin)}` : ''}`
       : '/join/';
     case 'author': return route.id ? `/host/item/?gameId=${route.id}` : `/host/create/?type=${route.mode}`;
     case 'game': return `/${route.host ? `host/${route.lobby ? 'lobby' : 'game'}` : 'play'}/?gameId=${route.id}`;
@@ -29,9 +29,12 @@ export function parseRoute(url: URL): AppRoute {
   for (const key of ['gameId', 'code', 'quiz', 'type']) if (query.getAll(key).length > 1) return invalid;
   const path = url.pathname.replace(/\/+$/, '') || '/';
   const invitation = query.get('code') ?? query.get('quiz') ?? query.get('gameId') ?? '';
+  const fragment = new URLSearchParams(url.hash.slice(1));
+  const pin = fragment.get('pin') ?? undefined;
+  if (fragment.getAll('pin').length > 1 || (pin !== undefined && !/^\d{4}$/.test(pin))) return invalid;
   if ([query.has('code'), query.has('quiz'), query.has('gameId')].filter(Boolean).length > 1) return invalid;
   if ((path === '/' && invitation) || path === '/join') {
-    return !invitation || isInvitation(invitation) ? { page: 'join', invitation } : invalid;
+    return !invitation || isInvitation(invitation) ? { page: 'join', invitation, ...(pin ? { pin } : {}) } : invalid;
   }
   if (path === '/' || path === '/library' || path === '/quizzes') return { page: 'home' };
   if (path === '/admin') return { page: 'admin' };

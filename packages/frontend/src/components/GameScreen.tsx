@@ -54,6 +54,7 @@ export function GameScreen({ game, host, nickname, joinUrl, busy, onControl, onA
         <div className="lobby-invitation">
         <div className="qr-container"><QRCodeSVG value={joinUrl} size={160} title={`Scan to join this ${game.mode}`} /></div>
         <div className="code-panel"><div className="session-code"><strong>{game.code}</strong><button className="icon-button" aria-label="Copy session code" onClick={() => void copy(game.code)}><Icon name={copied === game.code ? 'check' : 'copy'} /></button></div>
+          {game.invitationPin && <p className="invitation-pin">Invitation PIN: <strong>{game.invitationPin}</strong></p>}
           <div className="join-link"><a href={joinUrl}>{joinUrl}</a><button className="icon-button" aria-label="Copy invite link" onClick={() => void copy(joinUrl)}><Icon name={copied === joinUrl ? 'check' : 'copy'} /></button></div>
         </div>
         </div>
