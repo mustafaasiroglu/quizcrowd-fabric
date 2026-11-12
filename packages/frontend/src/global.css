@@ -183,7 +183,8 @@ button.text-button { border: 0; padding: 8px 0; color: var(--qc-primary-text); b
 .home-signin p { margin-top: 16px; }
 .recent-heading { margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .recent-layout { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--qc-border); border-radius: 10px; background: var(--qc-input); }
-.recent-layout button { padding: 6px 12px; font-size: 13px; border: 0; border-radius: 7px; background: transparent; color: var(--qc-muted); }
+.recent-layout button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 8px; border: 0; border-radius: 7px; background: transparent; color: var(--qc-muted); }
+.recent-layout .icon { width: 18px; height: 18px; }
 .recent-layout button[aria-pressed="true"] { background: var(--qc-primary-soft); color: var(--qc-text); }
 .forms-home .recent-sessions { margin-top: 48px; }
 .recent-heading h2 { font-size: 22px; margin-bottom: 6px; }

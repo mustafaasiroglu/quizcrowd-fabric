@@ -1,5 +1,7 @@
-type Name = 'back' | 'copy' | 'check' | 'close' | 'up' | 'down' | 'trash' | 'settings' | 'adjust' | 'clock' | 'sun' | 'moon' | 'users' | 'user' | 'more' | 'quiz' | 'survey' | 'join' | 'plus' | 'save' | 'play' | 'open' | 'logout' | 'calendar' | 'questions' | 'responses' | 'lock';
+type Name = 'back' | 'copy' | 'check' | 'close' | 'up' | 'down' | 'trash' | 'settings' | 'adjust' | 'clock' | 'sun' | 'moon' | 'users' | 'user' | 'more' | 'quiz' | 'survey' | 'join' | 'plus' | 'save' | 'play' | 'open' | 'logout' | 'calendar' | 'questions' | 'responses' | 'lock' | 'list' | 'grid';
 const paths: Record<Name, string> = {
+  list: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
+  grid: 'M3 3h7v7H3V3m11 0h7v7h-7V3M3 14h7v7H3v-7m11 0h7v7h-7v-7',
   back: 'M15 19l-7-7 7-7',
   copy: 'M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2m-6 12h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z',
   check: 'M5 13l4 4L19 7',

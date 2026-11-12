@@ -331,8 +331,10 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     expect(loading).toContain('Loading recent items...');
     expect(loading).toContain('class="session-grid session-list"');
     expect(loading).toContain('aria-label="Recent items view"');
-    expect(loading).toContain('aria-pressed="true">List</button>');
-    expect(loading).toContain('aria-pressed="false">Cards</button>');
+    expect(loading).toContain('aria-label="List" title="List" aria-pressed="true"><svg');
+    expect(loading).toContain('aria-label="Cards" title="Cards" aria-pressed="false"><svg');
+    expect(loading).not.toContain('>List</button>');
+    expect(loading).not.toContain('>Cards</button>');
     expect(loading.match(/class="card session-placeholder"/g)).toHaveLength(3);
     expect(loading).not.toContain('No recent items');
     expect(ready).toContain('No recent items');

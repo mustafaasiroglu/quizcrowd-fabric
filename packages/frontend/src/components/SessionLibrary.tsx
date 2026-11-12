@@ -21,8 +21,8 @@ export function SessionLibrary({ quizzes, loadState, busy, onOpen, onDuplicate, 
   return <section className="recent-sessions" aria-labelledby="recent-heading" aria-busy={loadState === 'loading'}>
     <div className="recent-heading"><div><h2 id="recent-heading">Recent Items</h2><p className="small muted">Your recent quiz and surveys.</p></div>
       <div className="recent-layout" role="group" aria-label="Recent items view">
-        <button type="button" aria-pressed={layout === 'list'} onClick={() => chooseLayout('list')}>List</button>
-        <button type="button" aria-pressed={layout === 'cards'} onClick={() => chooseLayout('cards')}>Cards</button>
+        <button type="button" aria-label="List" title="List" aria-pressed={layout === 'list'} onClick={() => chooseLayout('list')}><Icon name="list" /></button>
+        <button type="button" aria-label="Cards" title="Cards" aria-pressed={layout === 'cards'} onClick={() => chooseLayout('cards')}><Icon name="grid" /></button>
       </div>
     </div>
     {storageError && <p className="small muted" role="status">Browser storage is unavailable. Your recent items view will reset on reload.</p>}

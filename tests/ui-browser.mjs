@@ -471,13 +471,22 @@ try {
       await until('document.querySelectorAll(".session-card").length===3');
       assert.equal(await evaluate('!!document.querySelector(".session-list")'),saved!=='cards');
     }
+    await evaluate('document.querySelector(".recent-layout [aria-label=List]").focus()');
+    await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9},session);
+    await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9},session);
+    assert.equal(await evaluate('document.activeElement.getAttribute("aria-label")'),'Cards');
+    await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13},session);
+    await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13},session);
+    assert.equal(await evaluate('document.activeElement.getAttribute("aria-pressed")'),'true');
     for (const theme of ['light','dark']) {
       for (const width of [1440,390,320]) {
         await cdp.call('Emulation.setDeviceMetricsOverride',{width,height:width===1440?1000:844,deviceScaleFactor:1,mobile:false},session);
         await click(theme==='light'?'Light':'Dark');
         for (const layout of ['List','Cards']) {
           await click(layout);
-          assert.equal(await evaluate(`document.querySelector('.recent-layout button[aria-pressed="true"]').textContent`),layout);
+          assert.equal(await evaluate(`document.querySelector('.recent-layout button[aria-pressed="true"]').getAttribute("aria-label")`),layout);
+          assert.deepEqual(await evaluate('[...document.querySelectorAll(".recent-layout button")].map(e=>({text:e.textContent,title:e.title,label:e.getAttribute("aria-label"),icon:e.querySelector("svg")?.getAttribute("aria-hidden"),width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height}))'),
+            ['List','Cards'].map(label=>({text:'',title:label,label,icon:'true',width:36,height:36})));
           assert.equal(await evaluate('!!document.querySelector(".session-list")'),layout==='List');
           assert.equal(await evaluate('document.activeElement===document.querySelector(".recent-layout button[aria-pressed=true]")'),true);
           if (width===1440 && layout==='List') assert.ok(await evaluate('document.querySelector(".session-card").getBoundingClientRect().height<=88'),'desktop list is compact');

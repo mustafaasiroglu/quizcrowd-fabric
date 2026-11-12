@@ -201,10 +201,12 @@ No fullscreen is entered automatically and no screen-size equality heuristic is
 used. Browser/embedded hosts that expose none of these signals cannot reliably
 report browser-controlled fullscreen to page code, so their F11 detection is best effort.
 
-Recent Items defaults to a compact List view. The List / Cards control beside
+Recent Items defaults to a compact List view. The icon-only list/grid control beside
 the heading retains an explicit choice in browser storage; missing or invalid
 preferences default to List. If storage is blocked, switching still works for
 the current visit and a notice explains that the choice cannot be saved.
+The buttons keep List / Cards accessible names and tooltips, selected states
+and visible keyboard focus.
 Both views share the same metadata, open action and owner action menu. Rows
 wrap on narrow screens, including long titles, without horizontal scrolling.
 Cards retain their existing appearance. Loading placeholders follow the
