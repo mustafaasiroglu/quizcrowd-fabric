@@ -201,6 +201,15 @@ No fullscreen is entered automatically and no screen-size equality heuristic is
 used. Browser/embedded hosts that expose none of these signals cannot reliably
 report browser-controlled fullscreen to page code, so their F11 detection is best effort.
 
+Recent Items defaults to a compact List view. The List / Cards control beside
+the heading retains an explicit choice in browser storage; missing or invalid
+preferences default to List. If storage is blocked, switching still works for
+the current visit and a notice explains that the choice cannot be saved.
+Both views share the same metadata, open action and owner action menu. Rows
+wrap on narrow screens, including long titles, without horizontal scrolling.
+Cards retain their existing appearance. Loading placeholders follow the
+selected layout; empty and error states remain distinct.
+
 Recent Items starts in an explicit loading state with three noninteractive,
 screen-reader-hidden placeholder cards and an accessible loading status.
 It is separated from home actions by a 48px gap, reduced to 40px on mobile.
@@ -587,6 +596,8 @@ To regenerate only those curated repository images in an isolated local Edge:
 ```powershell
 $env:QUIZCROWD_UI_FILTER = 'polished showcase'
 $env:QUIZCROWD_UPDATE_SHOWCASE = '1'
+node tests\ui-browser.mjs
+$env:QUIZCROWD_UI_FILTER = 'recent layouts'
 node tests\ui-browser.mjs
 Remove-Item Env:\QUIZCROWD_UI_FILTER, Env:\QUIZCROWD_UPDATE_SHOWCASE
 ```

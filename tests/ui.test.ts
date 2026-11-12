@@ -329,6 +329,10 @@ describe('original QuizCrowd screen structure with Fabric authorization controls
     const loading = ui.renderLibrary('loading'), ready = ui.renderLibrary('ready'), failed = ui.renderLibrary('error');
     expect(loading).toContain('aria-busy="true"');
     expect(loading).toContain('Loading recent items...');
+    expect(loading).toContain('class="session-grid session-list"');
+    expect(loading).toContain('aria-label="Recent items view"');
+    expect(loading).toContain('aria-pressed="true">List</button>');
+    expect(loading).toContain('aria-pressed="false">Cards</button>');
     expect(loading.match(/class="card session-placeholder"/g)).toHaveLength(3);
     expect(loading).not.toContain('No recent items');
     expect(ready).toContain('No recent items');

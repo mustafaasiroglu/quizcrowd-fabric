@@ -460,6 +460,68 @@ try {
     assert.equal(await evaluate('document.querySelector("#invitation-pin").value'),'0007','manual PIN survives normal Entra session transition');
     await click('Join Game'); await until('!!document.querySelector(".attendee-lobby")');
   });
+  await check('recent layouts: default, remembered, compact responsive rows, cards, actions and loading', async () => {
+    await navigate('?example=showcase-home');
+    await evaluate('localStorage.removeItem("quizcrowd-recent-layout")');
+    await cdp.call('Page.reload', {}, session);
+    await until('document.querySelectorAll(".session-list .session-card").length===3');
+    for (const saved of ['invalid', 'list', 'cards']) {
+      await evaluate(`localStorage.setItem("quizcrowd-recent-layout",${JSON.stringify(saved)})`);
+      await cdp.call('Page.reload', {}, session);
+      await until('document.querySelectorAll(".session-card").length===3');
+      assert.equal(await evaluate('!!document.querySelector(".session-list")'),saved!=='cards');
+    }
+    for (const theme of ['light','dark']) {
+      for (const width of [1440,390,320]) {
+        await cdp.call('Emulation.setDeviceMetricsOverride',{width,height:width===1440?1000:844,deviceScaleFactor:1,mobile:false},session);
+        await click(theme==='light'?'Light':'Dark');
+        for (const layout of ['List','Cards']) {
+          await click(layout);
+          assert.equal(await evaluate(`document.querySelector('.recent-layout button[aria-pressed="true"]').textContent`),layout);
+          assert.equal(await evaluate('!!document.querySelector(".session-list")'),layout==='List');
+          assert.equal(await evaluate('document.activeElement===document.querySelector(".recent-layout button[aria-pressed=true]")'),true);
+          if (width===1440 && layout==='List') assert.ok(await evaluate('document.querySelector(".session-card").getBoundingClientRect().height<=88'),'desktop list is compact');
+          await inspectScreen(`recent-${layout.toLowerCase()}-${theme}-${width}`);
+          await screenshot(`recent-${layout.toLowerCase()}-${theme}-${width}`);
+          if (process.env.QUIZCROWD_UPDATE_SHOWCASE==='1' && theme==='light' && width===1440) {
+            await copyFile(join(directory,`recent-${layout.toLowerCase()}-${theme}-${width}.png`),join('docs','images',layout==='List'?'home-desktop.png':'home-desktop-cards.png'));
+          }
+          assert.equal(await evaluate('document.querySelector("button button")===null'),true);
+          await pointerClick('document.querySelector(".session-menu summary")');
+          await until('!!document.querySelector(".session-menu[open]")');
+          await cdp.call('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27},session);
+          await cdp.call('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27},session);
+          assert.equal(await evaluate('document.activeElement===document.querySelector(".session-menu summary")'),true);
+          assert.equal(await evaluate('!!document.querySelector(".session-menu[open]")'),false);
+        }
+      }
+    }
+    await click('List');
+    await evaluate('document.querySelector(".session-title").textContent="A very long synthetic session title "+ "unbroken".repeat(35)');
+    await inspectScreen('recent-list-long-title-320');
+    await screenshot('recent-list-long-title-320');
+    await cdp.call('Page.reload',{},session);
+    await until('!!document.querySelector(".session-list .session-open")');
+    await pointerClick('document.querySelector(".session-open")');
+    await until('!!document.querySelector(".author")');
+    await pointerClick('document.querySelector(\'[aria-label="Go back"]\')');
+    await until('!!document.querySelector(".session-list")');
+    await pointerClick('document.querySelector(".session-menu summary")'); await click('Duplicate');
+    await until('!!document.querySelector(".author")');
+    assert.ok((await evaluate('document.querySelector("#quiz-title").value')).startsWith('Copy - '));
+    for (const layout of ['List','Cards']) {
+      await navigate('?library=loading');
+      await until('!!document.querySelector(".library-loading")');
+      await click(layout);
+      assert.equal(await evaluate('!!document.querySelector(".library-loading .session-list")'),layout==='List');
+      await inspectScreen(`recent-${layout.toLowerCase()}-loading`);
+      await screenshot(`recent-${layout.toLowerCase()}-loading`);
+      await evaluate('window.__quizcrowdFixture.release("Synthetic load failure")');
+      await until('document.body.innerText.includes("Recent items could not be loaded.")');
+      assert.equal(await evaluate('!!document.querySelector(".empty-library")'),false);
+    }
+    await evaluate('localStorage.removeItem("quizcrowd-recent-layout")');
+  });
   await check('polished showcase: home with colored actions and realistic recent items', async () => {
     await cdp.call('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false }, session);
     await navigate('?example=showcase-home');
@@ -1818,6 +1880,13 @@ try {
     await click('Light');
     assert.equal(await evaluate('document.documentElement.dataset.theme'), 'light');
     assert.ok(await evaluate('document.querySelector(".theme-notice").textContent.includes("reset on reload")'));
+    await navigate();
+    await until('!!document.querySelector(".session-list .session-card")');
+    await click('Cards');
+    assert.equal(await evaluate('!!document.querySelector(".session-list")'),false);
+    assert.ok(await evaluate('document.querySelector(".recent-sessions [role=status]").textContent.includes("view will reset on reload")'));
+    await click('List');
+    assert.equal(await evaluate('!!document.querySelector(".session-list")'),true);
   });
   await check('no runtime exception and no cloud or third-party network access in UI test', async () => {
     assert.deepEqual(cdp.exceptions, []);

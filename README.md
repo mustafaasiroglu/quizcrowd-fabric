@@ -149,7 +149,12 @@ examples**, not live Fabric test evidence. Names, scores and feedback are
 fictional. Survey results and written feedback appear only to the session owner;
 attendees see their own response acknowledgement and a completion message.
 
-![Home with colored quiz, survey and invitation actions and fictional recent sessions](docs/images/home-desktop.png)
+Recent Items opens as a compact list. Switch to Cards beside the heading to
+restore the card layout; your browser remembers the choice.
+
+![Home with the default compact recent items list and fictional sessions](docs/images/home-desktop.png)
+
+[See the alternative Cards view](docs/images/home-desktop-cards.png).
 
 | Desktop host | Mobile attendee |
 | --- | --- |
